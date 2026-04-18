@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, JetBrains_Mono, Instrument_Serif } from "next/font/google";
+import { Providers } from "@/app/providers";
 import "./globals.css";
 
 const sans = Geist({
@@ -31,7 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body
         className={`${sans.variable} ${mono.variable} ${serif.variable} gpu-root min-h-screen antialiased`}
       >
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

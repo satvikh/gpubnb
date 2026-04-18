@@ -1,8 +1,8 @@
-# GPUbnb
+# Computebnb
 
-GPUbnb is a hackathon MVP for a marketplace where people lend out spare laptop or desktop compute for lightweight AI jobs. Users submit jobs through a web app. Provider machines run a local Node.js CLI agent that registers the machine, polls for work, executes one job at a time, reports progress/results, and earns money in a mock internal ledger.
+Computebnb is a hackathon MVP for a marketplace where people lend out spare laptop or desktop compute for lightweight AI jobs. Users submit jobs through a web app. Provider machines run a local Node.js CLI agent that registers the machine, polls for work, executes one job at a time, reports progress/results, and earns money in a mock internal ledger.
 
-GPUbnb is not a decentralized training protocol, not a blockchain app, and not a desktop app. The web app is the control plane; the provider software is a CLI worker.
+Computebnb is not a decentralized training protocol, not a blockchain app, and not a desktop app. The web app is the control plane; the provider software is a CLI worker.
 
 ## Architecture
 
@@ -52,7 +52,7 @@ Stubbed for hackathon speed:
 
 The provider CLI lives in `worker/` and follows this loop:
 
-1. Register the machine unless `GPUBNB_PROVIDER_ID` is already configured.
+1. Register the machine unless `Computebnb_PROVIDER_ID` is already configured.
 2. Send a heartbeat every few seconds.
 3. Poll the control plane for one assigned job.
 4. Execute the job locally through `worker/executor.ts`.
@@ -92,7 +92,7 @@ npm run worker
 Optional MongoDB Atlas setup:
 
 1. Create a MongoDB Atlas cluster.
-2. Create a database named `gpubnb`.
+2. Create a database named `Computebnb`.
 3. Review `mongodb/schema.md` for the collection shapes.
 4. Run `mongodb/indexes.js` with `mongosh` to create starter indexes.
 5. Run `mongodb/seed.js` with `mongosh` for sample provider/job data.
