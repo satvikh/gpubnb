@@ -87,6 +87,106 @@ export interface WorkerState {
   workerLogs: JobLog[];
 }
 
+export interface WorkerRuntimeSnapshot {
+  registered: boolean;
+  machine: Machine;
+  metrics: ResourceMetrics;
+  activeJob: Job | null;
+  recentJobs: Job[];
+  earnings: Earnings;
+  settings: WorkerSettings;
+  networkOnline: boolean;
+  workerLogs: JobLog[];
+}
+
+export interface WorkerStatusChangedEvent {
+  type: "worker_status_changed";
+  status: WorkerStatus;
+  lastHeartbeatAt: string | null;
+  uptimeSeconds: number;
+}
+
+export interface MachineDetectedEvent {
+  type: "machine_detected";
+  machine: Machine;
+}
+
+export interface MachineRegisteredEvent {
+  type: "machine_registered";
+  machine: Machine;
+  settings: WorkerSettings;
+}
+
+export interface HeartbeatEvent {
+  type: "heartbeat";
+  at: string;
+  latencyMs: number;
+  uptimeSeconds: number;
+}
+
+export interface JobAssignedEvent {
+  type: "job_assigned";
+  job: Job;
+}
+
+export interface JobProgressEvent {
+  type: "job_progress";
+  job: Job;
+}
+
+export interface JobCompletedEvent {
+  type: "job_completed";
+  job: Job;
+  recentJobs: Job[];
+}
+
+export interface MetricsUpdateEvent {
+  type: "metrics_updated";
+  metrics: ResourceMetrics;
+}
+
+export interface EarningsUpdateEvent {
+  type: "earnings_updated";
+  earnings: Earnings;
+}
+
+export interface ActivityLogEvent {
+  type: "log_emitted";
+  log: JobLog;
+  jobId?: string | null;
+}
+
+export interface WorkerSettingsUpdatedEvent {
+  type: "settings_updated";
+  settings: WorkerSettings;
+}
+
+export interface WorkerErrorEvent {
+  type: "worker_error";
+  message: string;
+  recoverable: boolean;
+}
+
+export interface WorkerSnapshotEvent {
+  type: "snapshot";
+  snapshot: WorkerRuntimeSnapshot;
+}
+
+export type WorkerEvent =
+  | WorkerStatusChangedEvent
+  | MachineDetectedEvent
+  | MachineRegisteredEvent
+  | HeartbeatEvent
+  | JobAssignedEvent
+  | JobProgressEvent
+  | JobCompletedEvent
+  | MetricsUpdateEvent
+  | EarningsUpdateEvent
+  | ActivityLogEvent
+  | WorkerSettingsUpdatedEvent
+  | WorkerErrorEvent
+  | WorkerSnapshotEvent;
+
 export type WorkerAction =
   | { type: "SIGN_IN"; name: string }
   | { type: "REGISTER_MACHINE"; settings: Partial<WorkerSettings> }
@@ -96,4 +196,6 @@ export type WorkerAction =
   | { type: "RESUME_WORKER" }
   | { type: "EMERGENCY_STOP" }
   | { type: "TICK" }
-  | { type: "UPDATE_SETTINGS"; settings: Partial<WorkerSettings> };
+  | { type: "UPDATE_SETTINGS"; settings: Partial<WorkerSettings> }
+  | { type: "WORKER_EVENT"; event: WorkerEvent }
+  | { type: "WORKER_SNAPSHOT"; snapshot: WorkerRuntimeSnapshot };
