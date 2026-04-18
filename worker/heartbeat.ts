@@ -5,9 +5,9 @@ export function startHeartbeat(config: WorkerConfig, providerId: string) {
   const tick = async () => {
     try {
       await sendHeartbeat(config, providerId);
-      console.log("heartbeat: online");
+      console.log("Heartbeat: online");
     } catch (error) {
-      console.error("heartbeat failed:", error);
+      console.error("Heartbeat failed:", error instanceof Error ? error.message : error);
     }
   };
 

@@ -12,23 +12,27 @@ export function startPoller(config: WorkerConfig, providerId: string) {
     try {
       const { job } = await pollForJob(config, providerId);
       if (!job) {
-        console.log("poll: no job");
+        console.log("Poll: no job");
         return;
       }
 
       busy = true;
       activeJobId = job.id;
-      console.log(`poll: assigned ${job.id}`);
+      console.log(`Poll: assigned ${job.id} (${job.type})`);
       await markStarted(config, providerId, job.id);
-      const result = await executeJob(job, (message) =>
-        reportProgress(config, providerId, job.id, message).then(() => console.log(`progress: ${message}`))
+      const result = await executeJob(config, job, (message) =>
+        reportProgress(config, providerId, job.id, message).then(() => console.log(`Progress: ${message}`))
       );
       await markComplete(config, providerId, job.id, result);
-      console.log(`complete: ${job.id}`);
+      console.log(`Complete: ${job.id}`);
     } catch (error) {
-      console.error("poller failed:", error);
+      console.error("Poller failed:", error instanceof Error ? error.message : error);
       if (activeJobId) {
-        await markFailed(config, providerId, activeJobId, error instanceof Error ? error.message : "Unknown worker error");
+        try {
+          await markFailed(config, providerId, activeJobId, error instanceof Error ? error.message : "Unknown worker error");
+        } catch (reportError) {
+          console.error("Failed to report job failure:", reportError instanceof Error ? reportError.message : reportError);
+        }
       }
     } finally {
       busy = false;

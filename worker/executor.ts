@@ -1,17 +1,12 @@
 import type { Job } from "@/lib/types";
+import type { WorkerConfig } from "./config";
+import type { WorkerResult } from "./api";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function executeJob(job: Job, onProgress: (message: string) => Promise<void>) {
-  // TODO: Replace this mock executor with sandboxed adapters for approved job types.
-  await onProgress("Loading local runtime");
-  await sleep(1000);
-
-  await onProgress(`Executing ${job.type}`);
-  await sleep(1000);
-
+function buildOutput(job: Job): string {
   if (job.type === "shell_demo") {
     return `Mock shell output for input: ${job.input}`;
   }
@@ -25,4 +20,34 @@ export async function executeJob(job: Job, onProgress: (message: string) => Prom
   }
 
   return `Mock text result: ${job.input}\n\nSummary:\n- Local agent received the job\n- The job ran on a provider machine\n- Results were returned to GPUbnb`;
+}
+
+export async function executeJob(
+  config: WorkerConfig,
+  job: Job,
+  onProgress: (message: string) => Promise<void>
+): Promise<WorkerResult> {
+  const startedAt = Date.now();
+
+  // TODO: Replace this mock executor with sandboxed adapters for approved job types.
+  await onProgress("Loading local runtime");
+  await sleep(config.executionStepMs);
+
+  await onProgress(`Executing ${job.type} workload`);
+  await sleep(config.executionStepMs);
+
+  // TODO: Stream real model or process logs back through onProgress.
+  await onProgress("Writing result artifact");
+  await sleep(Math.max(250, Math.floor(config.executionStepMs / 2)));
+
+  return {
+    jobId: job.id,
+    type: job.type,
+    output: buildOutput(job),
+    metadata: {
+      providerMachine: config.machineName,
+      durationMs: Date.now() - startedAt,
+      simulated: true
+    }
+  };
 }

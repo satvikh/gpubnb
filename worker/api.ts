@@ -1,6 +1,17 @@
 import type { Assignment, Job, Provider } from "@/lib/types";
 import type { WorkerConfig } from "./config";
 
+export interface WorkerResult {
+  jobId: string;
+  type: Job["type"];
+  output: string;
+  metadata: {
+    providerMachine: string;
+    durationMs: number;
+    simulated: true;
+  };
+}
+
 async function post<T>(config: WorkerConfig, path: string, body: unknown): Promise<T> {
   const response = await fetch(`${config.apiUrl}${path}`, {
     method: "POST",
@@ -22,7 +33,7 @@ async function post<T>(config: WorkerConfig, path: string, body: unknown): Promi
 export async function registerProvider(config: WorkerConfig) {
   return post<{ provider: Provider }>(config, "/api/providers/register", {
     name: config.machineName,
-    capabilities: ["cpu", "node", "lightweight-ai"],
+    capabilities: ["cpu", "node", "lightweight-ai", "mock-batch-inference"],
     hourlyRateCents: 300
   });
 }
@@ -45,10 +56,18 @@ export async function reportProgress(config: WorkerConfig, providerId: string, j
   return post(config, `/api/jobs/${jobId}/progress`, { providerId, message });
 }
 
-export async function markComplete(config: WorkerConfig, providerId: string, jobId: string, result: string) {
-  return post(config, `/api/jobs/${jobId}/complete`, { providerId, result });
+export async function markComplete(config: WorkerConfig, providerId: string, jobId: string, result: WorkerResult) {
+  return post(config, `/api/jobs/${jobId}/complete`, {
+    providerId,
+    result: JSON.stringify(result, null, 2),
+    message: "Worker completed simulated execution"
+  });
 }
 
 export async function markFailed(config: WorkerConfig, providerId: string, jobId: string, error: string) {
-  return post(config, `/api/jobs/${jobId}/fail`, { providerId, error });
+  return post(config, `/api/jobs/${jobId}/fail`, {
+    providerId,
+    error,
+    message: "Worker failed during local execution"
+  });
 }
