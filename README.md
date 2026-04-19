@@ -1,6 +1,6 @@
 # GPUbnb
 
-ComputeBNB/GPUbnb is a hackathon marketplace for routing lightweight AI and batch jobs onto spare provider machines. It works now.
+ComputeBNB/GPUbnb is a hackathon marketplace for routing lightweight AI and batch jobs onto spare provider machines.
 
 The project now has one clear web story: 
 
