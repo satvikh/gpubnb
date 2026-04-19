@@ -28,9 +28,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="dark" suppressHydrationWarning>
       <body
-        className={`${sans.variable} ${mono.variable} ${serif.variable} gpu-root min-h-screen antialiased`}
+        className={`${sans.variable} ${mono.variable} ${serif.variable} min-h-screen antialiased`}
       >
         <Providers>{children}</Providers>
       </body>

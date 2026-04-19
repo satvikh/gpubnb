@@ -19,6 +19,7 @@ export function MarketplaceShell({
 }) {
   return (
     <div
+      className="gpu-root"
       style={{
         width: "100%",
         maxWidth: 1440,

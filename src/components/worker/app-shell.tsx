@@ -18,6 +18,7 @@ const navItems = [
 export function AppShell({ children, title, eyebrow }: { children: React.ReactNode; title: string; eyebrow: string }) {
   const pathname = usePathname();
   const { state } = useWorker();
+  const basePath = pathname?.startsWith("/provider") ? "/provider" : "";
 
   return (
     <div className="min-h-screen bg-[#080a09] text-zinc-100">
@@ -25,7 +26,7 @@ export function AppShell({ children, title, eyebrow }: { children: React.ReactNo
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.16),transparent_38%),linear-gradient(135deg,rgba(8,10,9,0.88),rgba(8,10,9,0.98)_62%,rgba(20,12,9,0.92))]" />
       <div className="relative flex min-h-screen">
         <aside className="hidden w-72 shrink-0 border-r border-white/10 bg-black/25 p-5 backdrop-blur-xl lg:block">
-          <Link href="/dashboard" className="group flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.04] p-3">
+          <Link href={`${basePath}/dashboard`} className="group flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.04] p-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-md bg-emerald-300 text-zinc-950 shadow-[0_0_32px_rgba(110,231,183,0.22)]">
               <Gauge className="h-5 w-5" />
             </div>
@@ -38,11 +39,12 @@ export function AppShell({ children, title, eyebrow }: { children: React.ReactNo
           <nav className="mt-8 space-y-2">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const active = pathname === item.href;
+              const href = `${basePath}${item.href}`;
+              const active = pathname === href;
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={href}
                   className={cn(
                     "group flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium transition",
                     active ? "bg-white text-zinc-950 shadow-[0_12px_32px_rgba(255,255,255,0.12)]" : "text-zinc-400 hover:bg-white/[0.06] hover:text-white"

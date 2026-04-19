@@ -62,6 +62,7 @@ export default function Theme0Login() {
 
   return (
     <div
+      className="gpu-root"
       style={{
         width: "100%",
         maxWidth: 1440,
