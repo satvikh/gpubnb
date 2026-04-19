@@ -11,7 +11,7 @@ export default function ProviderSetupPage() {
     <main className="min-h-screen bg-zinc-950 px-6 py-10 text-white">
       <div className="mx-auto max-w-4xl rounded-xl border border-white/10 bg-white/5 p-8">
         <p className="text-sm uppercase tracking-[0.2em] text-zinc-400">Producer machine setup</p>
-        <h1 className="mt-4 text-4xl font-semibold">Register this machine for Python jobs</h1>
+        <h1 className="mt-4 text-4xl font-semibold">Configure this machine for Python jobs</h1>
         <div className="mt-8 grid gap-4">
           <input
             className="h-12 rounded-md border border-white/10 bg-black/30 px-4 text-white"
@@ -78,7 +78,7 @@ export default function ProviderSetupPage() {
               router.push("/provider/dashboard");
             }}
           >
-            Register machine
+            Save machine details
           </button>
         </div>
       </div>

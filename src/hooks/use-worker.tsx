@@ -121,7 +121,7 @@ export function WorkerProvider({ children }: { children: React.ReactNode }) {
       signIn: (name = "Satvikh") => dispatch({ type: "SIGN_IN", name }),
       registerMachine: (settings = {}) => {
         const nextSettings = { ...state.settings, ...settings };
-        applySnapshot(workerClient.registerMachine(nextSettings)).catch((error) => {
+        applySnapshot(workerClient.registerMachine(nextSettings, stateRef.current.machine)).catch((error) => {
           baseDispatch({
             type: "WORKER_EVENT",
             event: {

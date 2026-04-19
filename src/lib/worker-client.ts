@@ -11,11 +11,11 @@ import {
   invokeUpdateWorkerSettings
 } from "@/src/lib/tauri-commands";
 import { listenToTauriWorkerEvents } from "@/src/lib/tauri-events";
-import type { Job, JobLog, WorkerEvent, WorkerRuntimeSnapshot, WorkerSettings } from "@/src/types/worker";
+import type { Job, JobLog, Machine, WorkerEvent, WorkerRuntimeSnapshot, WorkerSettings } from "@/src/types/worker";
 
 export interface WorkerControlClient {
   detectMachine: () => Promise<WorkerRuntimeSnapshot | null>;
-  registerMachine: (settings: WorkerSettings) => Promise<WorkerRuntimeSnapshot | null>;
+  registerMachine: (settings: WorkerSettings, machine: Machine) => Promise<WorkerRuntimeSnapshot | null>;
   startWorker: () => Promise<WorkerRuntimeSnapshot | null>;
   stopWorker: () => Promise<WorkerRuntimeSnapshot | null>;
   pauseWorker: () => Promise<WorkerRuntimeSnapshot | null>;
@@ -357,8 +357,8 @@ export const workerClient: WorkerControlClient = {
 
     return fallbackSnapshot();
   },
-  async registerMachine(settings) {
-    const snapshot = normalizeSnapshot(await invokeRegisterMachine(settings));
+  async registerMachine(settings, machine) {
+    const snapshot = normalizeSnapshot(await invokeRegisterMachine(settings, machine));
     if (snapshot) {
       return snapshot;
     }
@@ -370,6 +370,7 @@ export const workerClient: WorkerControlClient = {
       availability: "inactive",
       machine: {
         ...mockSnapshot.machine,
+        ...machine,
         status: "offline"
       },
       latestOutput: {

@@ -42,8 +42,8 @@ export async function invokeDetectMachine() {
   return invokeCommand<Machine>(WORKER_COMMANDS.detectMachine);
 }
 
-export async function invokeRegisterMachine(settings: WorkerSettings) {
-  return invokeCommand<WorkerRuntimeSnapshot>(WORKER_COMMANDS.registerMachine, { settings });
+export async function invokeRegisterMachine(settings: WorkerSettings, machine: Machine) {
+  return invokeCommand<WorkerRuntimeSnapshot>(WORKER_COMMANDS.registerMachine, { settings, machine });
 }
 
 export async function invokeStartWorker() {

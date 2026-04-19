@@ -589,7 +589,9 @@ impl WorkerRuntime {
                 "Control plane ready. Producer machine is waiting for backend registration.",
             )],
             rng_seed: 0xC0FFEE,
-            api_url: repo_env("GPUBNB_API_URL").unwrap_or_else(|| "http://localhost:3000".to_string()),
+            api_url: repo_env("GPUBNB_API_URL")
+                .or_else(|| repo_env("NEXT_PUBLIC_APP_URL"))
+                .unwrap_or_else(|| "http://localhost:3001".to_string()),
             runner_url: repo_env("GPUBNB_WORKER_RUNNER_URL")
                 .or_else(|| repo_env("WORKER_RUNNER_URL"))
                 .unwrap_or_else(|| "http://localhost:4317".to_string()),
@@ -1020,72 +1022,40 @@ pub fn register_machine(
     app: AppHandle,
     manager: tauri::State<'_, WorkerManager>,
     settings: WorkerSettings,
+    machine: Machine,
 ) -> WorkerRuntimeSnapshot {
     let mut runtime = manager.runtime.lock().expect("worker runtime poisoned");
     let mut events = runtime.update_settings(settings);
-    runtime.machine.name = local_machine_name();
+    runtime.machine.name = machine.name;
     runtime.machine.os = local_os_name();
-    runtime.machine.cpu = "Docker-backed Python worker".to_string();
-    runtime.machine.gpu = "Docker-compatible".to_string();
-
-    let registration = register_machine_remote(&manager.http, &runtime.api_url, &runtime.machine);
-    match registration {
-        Ok((producer_user_id, machine)) => {
-            runtime.registered = true;
-            runtime.provider_session = Some(ProviderSession {
-                producer_user_id,
-                provider_id: machine.id.clone(),
-                provider_token: String::new(),
-            });
-            runtime.machine.id = machine.id;
-            runtime.machine.name = machine.name;
-            runtime.machine.status = WorkerStatus::Offline;
-            runtime.pause_requested = false;
-            let log = runtime.push_log(
-                LogLevel::Success,
-                "Machine registered with backend.",
-            );
-            events.push(RuntimeEvent::LogEmitted(ActivityLogEvent {
-                event_type: "log_emitted",
-                log,
-                job_id: None,
-            }));
-            emit_worker_event(
-                &app,
-                MACHINE_REGISTERED_EVENT,
-                MachineRegisteredEvent {
-                    event_type: "machine_registered",
-                    machine: runtime.machine.clone(),
-                    settings: runtime.settings.clone(),
-                },
-            );
-        }
-        Err(error) => {
-            runtime.registered = false;
-            runtime.provider_session = None;
-            runtime.machine.status = WorkerStatus::Error;
-            let log = runtime.push_log(
-                LogLevel::Error,
-                &format!("Backend registration failed: {error}"),
-            );
-            events.push(RuntimeEvent::LogEmitted(ActivityLogEvent {
-                event_type: "log_emitted",
-                log,
-                job_id: None,
-            }));
-            events.push(RuntimeEvent::StatusChanged(WorkerStatusChangedEvent {
-                event_type: "worker_status_changed",
-                status: WorkerStatus::Error,
-                last_heartbeat_at: runtime.machine.last_heartbeat_at.clone(),
-                uptime_seconds: runtime.machine.uptime_seconds,
-            }));
-            drop(runtime);
-            emit_events(&app, events);
-            manager.emit_error(&app, error, false);
-            manager.emit_snapshot(&app);
-            return manager.snapshot();
-        }
-    }
+    runtime.machine.cpu = machine.cpu;
+    runtime.machine.gpu = if machine.gpu.trim().is_empty() {
+        "Docker-compatible".to_string()
+    } else {
+        machine.gpu
+    };
+    runtime.machine.memory_gb = machine.memory_gb;
+    runtime.machine.status = WorkerStatus::Offline;
+    runtime.registered = true;
+    runtime.pause_requested = false;
+    let log = runtime.push_log(
+        LogLevel::Success,
+        "Machine details saved locally. Activate this machine to publish it to the marketplace.",
+    );
+    events.push(RuntimeEvent::LogEmitted(ActivityLogEvent {
+        event_type: "log_emitted",
+        log,
+        job_id: None,
+    }));
+    emit_worker_event(
+        &app,
+        MACHINE_REGISTERED_EVENT,
+        MachineRegisteredEvent {
+            event_type: "machine_registered",
+            machine: runtime.machine.clone(),
+            settings: runtime.settings.clone(),
+        },
+    );
 
     drop(runtime);
     emit_events(&app, events);
@@ -1116,16 +1086,16 @@ pub fn start_worker(
 
     let events = {
         let mut runtime = manager.runtime.lock().expect("worker runtime poisoned");
-        if !runtime.registered || runtime.provider_session.is_none() {
+        if !runtime.registered {
             runtime.machine.status = WorkerStatus::Error;
             let log = runtime.push_log(
                 LogLevel::Error,
-                "Register this machine before starting the worker.",
+                "Configure this machine before activating it.",
             );
             manager.emit_log(&app, log, None);
             manager.emit_error(
                 &app,
-                "Worker start rejected because the machine is not registered.",
+                "Worker start rejected because the machine is not configured.",
                 false,
             );
             let snapshot = runtime.snapshot();
@@ -1133,12 +1103,51 @@ pub fn start_worker(
             return snapshot;
         }
 
+        match register_machine_remote(&manager.http, &runtime.api_url, &runtime.machine) {
+            Ok((producer_user_id, machine)) => {
+                runtime.provider_session = Some(ProviderSession {
+                    producer_user_id,
+                    provider_id: machine.id.clone(),
+                    provider_token: String::new(),
+                });
+                runtime.machine.id = machine.id;
+                runtime.machine.name = machine.name;
+            }
+            Err(error) => {
+                runtime.machine.status = WorkerStatus::Error;
+                let log = runtime.push_log(
+                    LogLevel::Error,
+                    &format!("Unable to publish this machine: {error}"),
+                );
+                manager.emit_log(&app, log, None);
+                manager.emit_error(&app, error, false);
+                let snapshot = runtime.snapshot();
+                manager.emit_snapshot(&app);
+                return snapshot;
+            }
+        }
+
+        if let Some(session) = runtime.provider_session.clone() {
+            if let Err(error) = send_heartbeat(&manager.http, &runtime.api_url, &session, "active") {
+                runtime.machine.status = WorkerStatus::Error;
+                let log = runtime.push_log(
+                    LogLevel::Error,
+                    &format!("Unable to activate this machine: {error}"),
+                );
+                manager.emit_log(&app, log, None);
+                manager.emit_error(&app, error, false);
+                let snapshot = runtime.snapshot();
+                manager.emit_snapshot(&app);
+                return snapshot;
+            }
+        }
+
         runtime.pause_requested = false;
         runtime.machine.uptime_seconds = 0;
         let mut events = runtime.set_status(WorkerStatus::Idle);
         let log = runtime.push_log(
             LogLevel::Success,
-            "Worker started. Polling backend for assigned jobs and using Docker runner for execution.",
+            "Machine activated. It is now published to the marketplace and polling for jobs.",
         );
         events.push(RuntimeEvent::LogEmitted(ActivityLogEvent {
             event_type: "log_emitted",
@@ -1166,21 +1175,33 @@ pub fn stop_worker(
         "Worker stopped by owner before completion.",
     );
 
+    let delete_error = {
+        let runtime = manager.runtime.lock().expect("worker runtime poisoned");
+        runtime
+            .provider_session
+            .clone()
+            .and_then(|session| delete_machine_remote(&manager.http, &runtime.api_url, &session.provider_id).err())
+    };
+
     let events = {
         let mut runtime = manager.runtime.lock().expect("worker runtime poisoned");
         runtime.pause_requested = false;
         runtime.active_execution = None;
         runtime.active_job = None;
+        runtime.provider_session = None;
+        runtime.machine.id = "node-local-preview".to_string();
         runtime.machine.uptime_seconds = 0;
         runtime.metrics.cpu_usage = 5.0;
         runtime.metrics.memory_usage = 25.0;
         runtime.metrics.heartbeat_latency_ms = 0;
         let mut events = runtime.set_status(WorkerStatus::Offline);
-        let message = match cancel_error {
-            Some(ref error) => format!("Worker stopped, but remote cancellation failed: {error}"),
-            None => "Worker stopped by owner.".to_string(),
+        let message = match (cancel_error.as_ref(), delete_error.as_ref()) {
+            (Some(cancel), Some(delete)) => format!("Worker stopped, but cleanup failed. cancel={cancel}; delete={delete}"),
+            (Some(cancel), None) => format!("Worker stopped, but remote cancellation failed: {cancel}"),
+            (None, Some(delete)) => format!("Worker stopped, but machine removal failed: {delete}"),
+            (None, None) => "Worker stopped and machine removed from marketplace.".to_string(),
         };
-        let level = if cancel_error.is_some() {
+        let level = if cancel_error.is_some() || delete_error.is_some() {
             LogLevel::Warning
         } else {
             LogLevel::Info
@@ -1200,6 +1221,9 @@ pub fn stop_worker(
 
     emit_events(&app, events);
     if let Some(error) = cancel_error {
+        manager.emit_error(&app, error, true);
+    }
+    if let Some(error) = delete_error {
         manager.emit_error(&app, error, true);
     }
     manager.emit_snapshot(&app);
@@ -1404,8 +1428,7 @@ fn register_machine_remote(
     api_url: &str,
     machine: &Machine,
 ) -> Result<(String, RegisteredMachine), String> {
-    let normalized_machine_name = machine
-        .name
+    let normalized_machine_name = local_machine_name()
         .to_lowercase()
         .chars()
         .map(|char| if char.is_ascii_alphanumeric() { char } else { '-' })
@@ -1437,6 +1460,14 @@ fn register_machine_remote(
     )?;
 
     Ok((auth.user.id, registration.machine))
+}
+
+fn delete_machine_remote(http: &Client, api_url: &str, machine_id: &str) -> Result<Value, String> {
+    delete_json(
+        http,
+        &format!("{api_url}/api/machines/{machine_id}"),
+        HeaderMap::new(),
+    )
 }
 
 fn send_heartbeat(
@@ -1986,6 +2017,20 @@ fn patch_json<T: DeserializeOwned, B: Serialize>(
     parse_json_response(response, url)
 }
 
+fn delete_json<T: DeserializeOwned>(
+    http: &Client,
+    url: &str,
+    headers: HeaderMap,
+) -> Result<T, String> {
+    let response = http
+        .delete(url)
+        .headers(headers)
+        .send()
+        .map_err(|error| format!("DELETE {url} failed: {error}"))?;
+
+    parse_json_response(response, url)
+}
+
 fn get_json<T: DeserializeOwned>(
     http: &Client,
     url: &str,
@@ -2022,7 +2067,7 @@ fn parse_json_response<T: DeserializeOwned>(
         .map_err(|error| format!("Unable to decode JSON from {url}: {error}; body={}", limit_output(&body)))
 }
 
-fn auth_headers(session: &ProviderSession) -> Result<HeaderMap, String> {
+fn auth_headers(_session: &ProviderSession) -> Result<HeaderMap, String> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     Ok(headers)
