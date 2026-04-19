@@ -3,9 +3,10 @@ import { z } from "zod";
 import dbConnect from "@/lib/db";
 import { Job, Assignment, Provider, JobEvent } from "@/lib/models";
 import { assignNextJob } from "@/lib/scheduling";
+import { requireProvider } from "@/lib/provider-auth";
 
 const schema = z.object({
-  providerId: z.string().optional(),
+  providerId: z.string().min(1),
   error: z.string().min(1),
   message: z.string().optional(),
 });
@@ -17,9 +18,20 @@ export async function POST(
   await dbConnect();
   const { id } = await params;
   const input = schema.parse(await request.json());
+  const auth = await requireProvider(request, input.providerId);
+  if (auth.response) return auth.response;
 
-  const job = await Job.findByIdAndUpdate(
-    id,
+  const assignment = await Assignment.findOneAndUpdate(
+    { jobId: id, providerId: input.providerId, status: { $in: ["assigned", "running"] } },
+    { $set: { status: "failed", completedAt: new Date() } },
+    { new: true }
+  );
+  if (!assignment) {
+    return NextResponse.json({ error: "No active job for provider" }, { status: 409 });
+  }
+
+  const job = await Job.findOneAndUpdate(
+    { _id: id, status: { $in: ["assigned", "running"] } },
     { $set: { status: "failed", error: input.error } },
     { new: true }
   );
@@ -27,19 +39,10 @@ export async function POST(
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
-  // Update assignment
-  const assignment = await Assignment.findOneAndUpdate(
-    { jobId: id },
-    { $set: { status: "failed", completedAt: new Date() } },
-    { new: true }
-  );
-
   // Free the provider
-  if (assignment) {
-    await Provider.findByIdAndUpdate(assignment.providerId, {
-      $set: { status: "online" },
-    });
-  }
+  await Provider.findByIdAndUpdate(assignment.providerId, {
+    $set: { status: "online" },
+  });
 
   await JobEvent.create({
     jobId: id,
