@@ -4,6 +4,7 @@ import { Job, Machine, User } from "@/lib/models";
 import type { SessionUser } from "@/lib/session";
 
 export type ApiUser = SessionUser;
+const MARKETPLACE_MACHINE_STALE_MS = 15_000;
 
 export interface ApiMachine {
   id: string;
@@ -138,7 +139,22 @@ export function formatJob(
 
 export async function listMarketplaceMachines() {
   await dbConnect();
-  const machines = await Machine.find({ status: { $in: ["active", "busy"] } })
+  const staleBefore = new Date(Date.now() - MARKETPLACE_MACHINE_STALE_MS);
+
+  await Machine.updateMany(
+    {
+      status: { $in: ["active", "busy"] },
+      updatedAt: { $lt: staleBefore },
+    },
+    {
+      $set: { status: "inactive" },
+    }
+  );
+
+  const machines = await Machine.find({
+    status: { $in: ["active", "busy"] },
+    updatedAt: { $gte: staleBefore },
+  })
     .sort({ status: 1, updatedAt: -1 })
     .lean();
   return machines.map(formatMachine);
