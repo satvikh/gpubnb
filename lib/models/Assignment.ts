@@ -25,8 +25,10 @@ const AssignmentSchema = new Schema<IAssignment>(
   { timestamps: true }
 );
 
-AssignmentSchema.index({ jobId: 1 });
-AssignmentSchema.index({ providerId: 1, status: 1 });
+// Indexes
+AssignmentSchema.index({ jobId: 1 }, { unique: true });
+AssignmentSchema.index({ providerId: 1 });
+AssignmentSchema.index({ status: 1 });
 
 const Assignment: Model<IAssignment> =
   mongoose.models.Assignment ||

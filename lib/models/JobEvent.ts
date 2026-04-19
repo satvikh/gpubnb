@@ -5,6 +5,7 @@ export interface IJobEvent extends Document {
   providerId?: Types.ObjectId;
   type: "created" | "assigned" | "started" | "progress" | "completed" | "failed";
   message: string;
+  progressPct?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,11 +20,14 @@ const JobEventSchema = new Schema<IJobEvent>(
       required: true,
     },
     message: { type: String, required: true },
+    progressPct: { type: Number, min: 0, max: 100 },
   },
   { timestamps: true }
 );
 
+// Indexes
 JobEventSchema.index({ jobId: 1 });
+JobEventSchema.index({ createdAt: -1 });
 
 const JobEvent: Model<IJobEvent> =
   mongoose.models.JobEvent || mongoose.model<IJobEvent>("JobEvent", JobEventSchema);

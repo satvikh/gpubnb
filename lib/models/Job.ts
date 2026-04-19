@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, Model } from "mongoose";
+import mongoose, { Schema, Document, Model, Types } from "mongoose";
 
 export type JobStatus = "queued" | "assigned" | "running" | "completed" | "failed";
 export type JobType = "text_generation" | "image_caption" | "embedding" | "shell_demo";
@@ -10,17 +10,16 @@ export interface IJob extends Document {
   input: string;
   result?: string;
   error?: string;
-  failureReason?: string;
   budgetCents: number;
-  assignedProviderId?: string;
+  providerPayoutCents?: number;
+  platformFeeCents?: number;
+  assignedProviderId?: Types.ObjectId;
   retryCount: number;
   startedAt?: Date;
   completedAt?: Date;
   actualRuntimeSeconds?: number;
-  jobCostCents?: number;
-  providerPayoutCents?: number;
-  platformFeeCents?: number;
   proofHash?: string;
+  failureReason?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,20 +40,24 @@ const JobSchema = new Schema<IJob>(
     input: { type: String, required: true },
     result: { type: String },
     error: { type: String },
-    failureReason: { type: String },
     budgetCents: { type: Number, default: 500 },
-    assignedProviderId: { type: String },
+    providerPayoutCents: { type: Number },
+    platformFeeCents: { type: Number },
+    assignedProviderId: { type: Schema.Types.ObjectId, ref: "Provider" },
     retryCount: { type: Number, default: 0 },
     startedAt: { type: Date },
     completedAt: { type: Date },
     actualRuntimeSeconds: { type: Number },
-    jobCostCents: { type: Number },
-    providerPayoutCents: { type: Number },
-    platformFeeCents: { type: Number },
     proofHash: { type: String },
+    failureReason: { type: String },
   },
   { timestamps: true }
 );
+
+// Indexes
+JobSchema.index({ status: 1 });
+JobSchema.index({ createdAt: -1 });
+JobSchema.index({ assignedProviderId: 1 });
 
 const Job: Model<IJob> =
   mongoose.models.Job || mongoose.model<IJob>("Job", JobSchema);
