@@ -9,7 +9,7 @@ export function createServer(config: RunnerConfig, service: RunnerService, execu
   app.use((request, response, next) => {
     response.setHeader("access-control-allow-origin", "*");
     response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
-    response.setHeader("access-control-allow-headers", "content-type");
+    response.setHeader("access-control-allow-headers", "authorization,content-type");
     if (request.method === "OPTIONS") {
       response.sendStatus(204);
       return;

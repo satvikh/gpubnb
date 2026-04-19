@@ -25,6 +25,8 @@ export async function GET(
       type: job.type,
       status: job.status,
       input: job.input,
+      requiredCapabilities: job.requiredCapabilities,
+      runnerPayload: job.runnerPayload,
       result: job.result,
       error: job.error,
       budgetCents: job.budgetCents,

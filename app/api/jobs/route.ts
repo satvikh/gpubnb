@@ -8,6 +8,8 @@ const schema = z.object({
   title: z.string().min(1),
   type: z.enum(["text_generation", "image_caption", "embedding", "shell_demo"]),
   input: z.string().min(1),
+  requiredCapabilities: z.array(z.string()).optional(),
+  runnerPayload: z.record(z.unknown()).optional(),
   budgetCents: z.coerce.number().int().positive().optional(),
 });
 
@@ -21,6 +23,8 @@ export async function GET() {
       type: j.type,
       status: j.status,
       input: j.input,
+      requiredCapabilities: j.requiredCapabilities,
+      runnerPayload: j.runnerPayload,
       result: j.result,
       error: j.error,
       budgetCents: j.budgetCents,
@@ -46,6 +50,8 @@ export async function POST(request: Request) {
     title: input.title,
     type: input.type,
     input: input.input,
+    requiredCapabilities: input.requiredCapabilities ?? capabilitiesForType(input.type),
+    runnerPayload: input.runnerPayload,
     budgetCents: input.budgetCents ?? 500,
     status: "queued",
   });
@@ -68,6 +74,8 @@ export async function POST(request: Request) {
           type: job.type,
           status: job.status,
           input: job.input,
+          requiredCapabilities: job.requiredCapabilities,
+          runnerPayload: job.runnerPayload,
           budgetCents: job.budgetCents,
           createdAt: job.createdAt,
           updatedAt: job.updatedAt,
@@ -81,4 +89,10 @@ export async function POST(request: Request) {
     new URL(`/jobs/${job._id}/results`, request.url),
     { status: 303 }
   );
+}
+
+function capabilitiesForType(type: z.infer<typeof schema>["type"]) {
+  if (type === "shell_demo") return ["cpu", "docker"];
+  if (type === "embedding" || type === "text_generation") return ["cpu", "node"];
+  return ["cpu"];
 }

@@ -14,6 +14,7 @@ export interface RunnerConfig {
   maxLogBytes: number;
   orphanCleanupIntervalMs: number;
   containerLabelPrefix: string;
+  allowCustomCommands: boolean;
 }
 
 function bool(value: string | undefined, fallback: boolean) {
@@ -39,6 +40,7 @@ export function loadConfig(): RunnerConfig {
     defaultTimeoutMs: int(process.env.DEFAULT_TIMEOUT_MS, 30000),
     maxLogBytes: int(process.env.MAX_LOG_BYTES, 64 * 1024),
     orphanCleanupIntervalMs: int(process.env.ORPHAN_CLEANUP_INTERVAL_MS, 60000),
-    containerLabelPrefix: process.env.CONTAINER_LABEL_PREFIX ?? "computebnb.worker-runner"
+    containerLabelPrefix: process.env.CONTAINER_LABEL_PREFIX ?? "computebnb.worker-runner",
+    allowCustomCommands: bool(process.env.ALLOW_CUSTOM_COMMANDS, false)
   };
 }

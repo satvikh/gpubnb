@@ -2,22 +2,24 @@ import { notFound } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusPill } from "@/components/status-pill";
 import { centsToDollars } from "@/lib/utils";
-import { store } from "@/lib/mock-store";
+import dbConnect from "@/lib/db";
+import { Job, JobEvent } from "@/lib/models";
 
 export const dynamic = "force-dynamic";
 
 export default async function ResultsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const job = store.getJob(id);
+  await dbConnect();
+  const job = await Job.findById(id).lean();
   if (!job) notFound();
-  const events = store.listEvents(job.id);
+  const events = await JobEvent.find({ jobId: id }).sort({ createdAt: -1 }).lean();
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold">{job.title}</h1>
-          <p className="mt-2 text-muted-foreground">{job.id}</p>
+          <p className="mt-2 text-muted-foreground">{String(job._id)}</p>
         </div>
         <StatusPill status={job.status} />
       </div>
@@ -56,9 +58,9 @@ export default async function ResultsPage({ params }: { params: Promise<{ id: st
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           {events.map((event) => (
-            <div key={event.id} className="border-b pb-3 last:border-0 last:pb-0">
+            <div key={String(event._id)} className="border-b pb-3 last:border-0 last:pb-0">
               <p className="font-medium">{event.type}: {event.message}</p>
-              <p className="text-muted-foreground">{event.createdAt}</p>
+              <p className="text-muted-foreground">{event.createdAt.toISOString()}</p>
             </div>
           ))}
         </CardContent>

@@ -30,6 +30,8 @@ const ProviderSchema = new Schema<IProvider>(
 );
 
 // Prevent model recompilation in Next.js hot reload
+ProviderSchema.index({ status: 1, lastHeartbeatAt: -1 });
+
 const Provider: Model<IProvider> =
   mongoose.models.Provider || mongoose.model<IProvider>("Provider", ProviderSchema);
 

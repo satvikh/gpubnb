@@ -15,12 +15,12 @@ export async function assignNextJob(): Promise<IAssignment | null> {
   if (!job) return null;
 
   // 2. Find a compatible idle provider with a recent heartbeat
-  // TODO: Add capability matching once job.requiredCapabilities is defined
   const heartbeatCutoff = new Date(Date.now() - HEARTBEAT_STALE_MS);
   const provider = await Provider.findOneAndUpdate(
     {
       status: "online",
       lastHeartbeatAt: { $gte: heartbeatCutoff },
+      capabilities: { $all: job.requiredCapabilities ?? [] },
     },
     { $set: { status: "busy" } },
     { new: true }
@@ -44,6 +44,10 @@ export async function assignNextJob(): Promise<IAssignment | null> {
     jobId: claimed._id,
     providerId: provider._id,
     status: "assigned",
+  }).catch(async (caught: unknown) => {
+    await Job.findByIdAndUpdate(claimed._id, { status: "queued" });
+    await Provider.findByIdAndUpdate(provider._id, { status: "online" });
+    throw caught;
   });
 
   // 5. Log the event
@@ -65,4 +69,15 @@ export async function getAssignmentForProvider(providerId: string) {
     providerId,
     status: { $in: ["assigned", "running"] },
   });
+}
+
+export async function markStaleProvidersOffline() {
+  const heartbeatCutoff = new Date(Date.now() - HEARTBEAT_STALE_MS);
+  return Provider.updateMany(
+    {
+      status: "online",
+      lastHeartbeatAt: { $lt: heartbeatCutoff }
+    },
+    { $set: { status: "offline" } }
+  );
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import dbConnect from "@/lib/db";
 import { Provider, Job } from "@/lib/models";
 import { getAssignmentForProvider, assignNextJob } from "@/lib/scheduling";
+import { requireProvider } from "@/lib/provider-auth";
 
 const schema = z.object({
   providerId: z.string().min(1),
@@ -10,8 +11,9 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   await dbConnect();
-  // TODO: Enforce one active assignment per provider in MongoDB with an atomic update.
   const input = schema.parse(await request.json());
+  const auth = await requireProvider(request, input.providerId);
+  if (auth.response) return auth.response;
 
   // Heartbeat the provider
   const provider = await Provider.findByIdAndUpdate(
@@ -64,6 +66,8 @@ export async function POST(request: Request) {
           type: job.type,
           status: job.status,
           input: job.input,
+          requiredCapabilities: job.requiredCapabilities,
+          runnerPayload: job.runnerPayload,
           budgetCents: job.budgetCents,
           createdAt: job.createdAt,
           updatedAt: job.updatedAt,

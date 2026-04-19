@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import dbConnect from "@/lib/db";
 import { Provider } from "@/lib/models";
+import { requireProvider } from "@/lib/provider-auth";
 
 const schema = z.object({
   providerId: z.string().min(1),
@@ -9,8 +10,9 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   await dbConnect();
-  // TODO: Validate provider token before accepting heartbeat updates.
   const input = schema.parse(await request.json());
+  const auth = await requireProvider(request, input.providerId);
+  if (auth.response) return auth.response;
 
   const provider = await Provider.findByIdAndUpdate(
     input.providerId,

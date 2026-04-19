@@ -15,6 +15,7 @@ interface RemotePollResponse {
 export class JobPoller {
   private timer: NodeJS.Timeout | undefined;
   private busy = false;
+  private remoteJobId: string | undefined;
 
   constructor(
     private readonly config: RunnerConfig,
@@ -36,7 +37,7 @@ export class JobPoller {
   }
 
   private async tick() {
-    if (this.busy) return;
+    if (this.busy || this.remoteJobId) return;
     this.busy = true;
 
     try {
@@ -47,7 +48,19 @@ export class JobPoller {
       if (!response.job) return;
 
       const payload = this.toLocalJob(response.job);
-      const submitted = this.service.submit(payload);
+      await this.post(`/api/jobs/${response.job.id}/start`, {
+        providerId: this.config.providerId
+      });
+      const submitted = this.service.submit(payload, {
+        onComplete: async (job) => {
+          try {
+            await this.reportRemoteResult(response.job!.id, job);
+          } finally {
+            this.remoteJobId = undefined;
+          }
+        }
+      });
+      this.remoteJobId = response.job.id;
       console.log(`[poller] accepted remote job ${response.job.id} as ${submitted.id}`);
     } catch (error) {
       console.warn("[poller] failed", error instanceof Error ? error.message : error);
@@ -86,5 +99,22 @@ export class JobPoller {
       type: "benchmark_demo",
       input: input ?? { source: "remote-poll" }
     };
+  }
+
+  private async reportRemoteResult(remoteJobId: string, job: { state: string; result?: unknown; error?: string }) {
+    if (job.state === "completed") {
+      await this.post(`/api/jobs/${remoteJobId}/complete`, {
+        providerId: this.config.providerId,
+        result: JSON.stringify(job.result ?? {}, null, 2),
+        message: "Docker worker-runner completed execution"
+      });
+      return;
+    }
+
+    await this.post(`/api/jobs/${remoteJobId}/fail`, {
+      providerId: this.config.providerId,
+      error: job.error ?? `Runner ended in ${job.state}`,
+      message: "Docker worker-runner failed execution"
+    });
   }
 }

@@ -27,6 +27,13 @@ const AssignmentSchema = new Schema<IAssignment>(
 
 // One active assignment per job
 AssignmentSchema.index({ jobId: 1 }, { unique: true });
+AssignmentSchema.index(
+  { providerId: 1, status: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { status: { $in: ["assigned", "running"] } },
+  }
+);
 
 const Assignment: Model<IAssignment> =
   mongoose.models.Assignment ||

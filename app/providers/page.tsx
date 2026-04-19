@@ -1,12 +1,16 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusPill } from "@/components/status-pill";
 import { centsToDollars } from "@/lib/utils";
-import { store } from "@/lib/mock-store";
+import dbConnect from "@/lib/db";
+import { Provider } from "@/lib/models";
+import { markStaleProvidersOffline } from "@/lib/scheduling";
 
 export const dynamic = "force-dynamic";
 
-export default function ProvidersPage() {
-  const providers = store.listProviders();
+export default async function ProvidersPage() {
+  await dbConnect();
+  await markStaleProvidersOffline();
+  const providers = await Provider.find().sort({ lastHeartbeatAt: -1 }).lean();
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10">
@@ -14,7 +18,7 @@ export default function ProvidersPage() {
       <p className="mt-2 text-muted-foreground">Machines running the local GPUbnb CLI agent.</p>
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         {providers.map((provider) => (
-          <Card key={provider.id}>
+          <Card key={String(provider._id)}>
             <CardHeader>
               <div className="flex items-center justify-between gap-3">
                 <CardTitle>{provider.name}</CardTitle>
@@ -25,7 +29,9 @@ export default function ProvidersPage() {
               <p>Capabilities: {provider.capabilities.join(", ")}</p>
               <p>Rate: {centsToDollars(provider.hourlyRateCents)} / hour</p>
               <p>Earned: {centsToDollars(provider.totalEarnedCents)}</p>
-              <p className="text-muted-foreground">Last heartbeat: {provider.lastHeartbeatAt ?? "never"}</p>
+              <p className="text-muted-foreground">
+                Last heartbeat: {provider.lastHeartbeatAt?.toISOString() ?? "never"}
+              </p>
             </CardContent>
           </Card>
         ))}

@@ -35,7 +35,10 @@ export function parseJobRequest(body: unknown): JobRequest {
   return schema.parse(body);
 }
 
-export function normalizeJob(request: JobRequest, defaults: Pick<JobLimits, "timeoutMs" | "logLimitBytes">): NormalizedJob {
+export function normalizeJob(
+  request: JobRequest,
+  defaults: Pick<JobLimits, "timeoutMs" | "logLimitBytes"> & { allowCustomCommands?: boolean }
+): NormalizedJob {
   const id = request.id ?? `job_${nanoid(10)}`;
   const image = request.image ?? DEFAULT_IMAGES[request.type];
 
@@ -55,7 +58,7 @@ export function normalizeJob(request: JobRequest, defaults: Pick<JobLimits, "tim
     id,
     type: request.type,
     image,
-    command: request.command ?? defaultCommand(request),
+    command: defaults.allowCustomCommands && request.command ? request.command : defaultCommand(request),
     script: request.script,
     input: request.input,
     limits
