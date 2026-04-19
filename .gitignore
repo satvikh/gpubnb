@@ -12,3 +12,5 @@ src-tauri/gen/schemas
 *.log
 tsconfig.tsbuildinfo
 .DS_Store
+
+src-tauri/target-check
