@@ -2124,14 +2124,21 @@ fn is_terminal_state(state: &str) -> bool {
 }
 
 fn is_successful_runner_completion(job: &RunnerJobRecord) -> bool {
-    job.state == "completed"
+    job
+        .result
+        .as_ref()
+        .is_some()
+        && job
+            .result
+            .as_ref()
+            .and_then(|result| result.error.clone())
+            .is_none()
         && job
             .result
             .as_ref()
             .and_then(|result| result.exit_code)
             .unwrap_or(1)
             == 0
-        && job.result.as_ref().and_then(|result| result.error.clone()).is_none()
 }
 
 fn runner_failure_message(job: &RunnerJobRecord) -> String {

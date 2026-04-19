@@ -60,9 +60,7 @@ export class RunnerService {
         ? result.error === "Timed out"
           ? "timed_out"
           : "failed"
-        : state === "queued"
-          ? "completed"
-          : state,
+        : "completed",
       updatedAt: result.endTime,
       logs: result.logs,
       result,
