@@ -1,6 +1,6 @@
 {
   "type": "python_script",
-  "script": "import pathlib\\nimport time\\nprint('hello from ComputeBNB sandbox')\\nfor i in range(3):\\n    print(f'tick {i}')\\n    time.sleep(0.5)\\npathlib.Path('/workspace/artifacts').mkdir(exist_ok=True)\\npathlib.Path('/workspace/artifacts/output.txt').write_text('sandbox artifact ok\\\\n')\\n",
+  "script": "import pathlib\nimport time\nprint('hello from ComputeBNB sandbox')\nfor i in range(3):\n    print(f'tick {i}')\n    time.sleep(0.5)\npathlib.Path('/workspace/artifacts').mkdir(exist_ok=True)\npathlib.Path('/workspace/artifacts/output.txt').write_text('sandbox artifact ok\\n')\n",
   "limits": {
     "timeoutMs": 10000,
     "cpus": 1,
