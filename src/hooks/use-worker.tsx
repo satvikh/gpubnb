@@ -33,6 +33,7 @@ export function WorkerProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     let active = true;
     let unlisten: (() => void) | null = null;
+    let intervalId: number | null = null;
 
     async function connectWorkerClient() {
       unlisten = await workerClient.subscribeToWorkerEvents((event) => {
@@ -50,6 +51,26 @@ export function WorkerProvider({ children }: { children: React.ReactNode }) {
       if (active && snapshot) {
         baseDispatch({ type: "WORKER_SNAPSHOT", snapshot });
       }
+
+      intervalId = window.setInterval(async () => {
+        try {
+          const liveSnapshot = await workerClient.getWorkerStatus();
+          if (active && liveSnapshot) {
+            baseDispatch({ type: "WORKER_SNAPSHOT", snapshot: liveSnapshot });
+          }
+        } catch (error) {
+          if (active) {
+            baseDispatch({
+              type: "WORKER_EVENT",
+              event: {
+                type: "worker_error",
+                message: error instanceof Error ? error.message : "Worker status refresh failed.",
+                recoverable: true
+              }
+            });
+          }
+        }
+      }, 2000);
     }
 
     connectWorkerClient().catch((error) => {
@@ -66,6 +87,9 @@ export function WorkerProvider({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
       unlisten?.();
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
     };
   }, []);
 
