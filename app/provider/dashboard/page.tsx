@@ -40,17 +40,38 @@ export default function ProviderDashboardPage() {
                   </pre>
                 </div>
               ) : (
-                <p className="mt-4 text-sm text-zinc-400">No active job.</p>
+                <div className="mt-4 space-y-2 text-sm text-zinc-400">
+                  <p>No active job.</p>
+                  <p>Machine is {state.availability === "active" ? "ready for the next job" : "not accepting jobs"}.</p>
+                </div>
               )}
             </section>
 
             <section className="rounded-xl border border-white/10 bg-black/20 p-6">
               <h2 className="text-xl font-semibold">Latest output</h2>
-              <pre className="mt-4 whitespace-pre-wrap font-mono text-xs text-zinc-400">
-                {state.latestOutput.detail}
-              </pre>
+              <div className="mt-4 space-y-2 text-sm text-zinc-300">
+                <p>State: {state.latestOutput.state}</p>
+                <p>{state.latestOutput.summary}</p>
+                <p className="text-zinc-400">{state.latestOutput.jobName}</p>
+                <pre className="whitespace-pre-wrap font-mono text-xs text-zinc-400">
+                  {state.latestOutput.detail}
+                </pre>
+              </div>
             </section>
           </div>
+
+          <section className="mt-6 rounded-xl border border-white/10 bg-black/20 p-6">
+            <h2 className="text-xl font-semibold">Activity</h2>
+            <div className="mt-4 space-y-3 text-sm text-zinc-300">
+              {state.workerLogs.slice(0, 5).map((log) => (
+                <div key={log.id} className="rounded-lg border border-white/5 bg-white/[0.03] p-3">
+                  <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">{log.level}</p>
+                  <p className="mt-2">{log.message}</p>
+                </div>
+              ))}
+              {state.workerLogs.length === 0 ? <p className="text-zinc-500">No activity yet.</p> : null}
+            </div>
+          </section>
         </div>
       </div>
     </main>

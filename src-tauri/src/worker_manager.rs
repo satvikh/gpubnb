@@ -537,10 +537,7 @@ struct ProviderSession {
 #[derive(Clone)]
 struct ActiveExecution {
     remote_job_id: String,
-    runner_job_id: String,
-    last_stdout_len: usize,
-    last_stderr_len: usize,
-    last_state: String,
+    request: RunnerExecuteRequest,
 }
 
 struct WorkerRuntime {
@@ -1607,54 +1604,42 @@ fn poll_for_assignment(http: &Client, runtime: &mut WorkerRuntime) -> Result<Vec
         }),
     )?;
 
-    let runner_request = runner_request_for_marketplace_job(&job);
-    let runner_response: RunnerExecuteResponse = post_json(
-        http,
-        &format!("{}/jobs/execute-sync", runtime.runner_url),
-        runner_headers()?,
-        &runner_request,
-    )?;
-
-    runtime.note_network_recovery();
     runtime.machine.status = WorkerStatus::Busy;
 
     let started_at = now();
-    let estimated_completion_at = runner_response
-        .job
-        .result
-        .as_ref()
-        .map(|result| result.end_time.clone())
-        .or_else(|| {
-            Some(
-                (Utc::now() + ChronoDuration::seconds(30))
-                    .to_rfc3339_opts(SecondsFormat::Millis, true),
-            )
-        });
-    let mut ui_job = Job {
+    let ui_job = Job {
         id: job.id.clone(),
         name: job.filename.clone().unwrap_or_else(|| "script.py".to_string()),
         job_type: map_marketplace_job_type(),
         status: JobStatus::Running,
-        progress: initial_progress_for_state(&runner_response.job.state),
+        progress: 10.0,
         started_at: Some(started_at.clone()),
-        estimated_completion_at,
+        estimated_completion_at: Some(
+            (Utc::now() + ChronoDuration::seconds(30))
+                .to_rfc3339_opts(SecondsFormat::Millis, true),
+        ),
         earnings: 0.0,
         cpu_usage: clamp(runtime.settings.cpu_limit * 0.72, 18.0, runtime.settings.cpu_limit),
         memory_usage: 48.0,
-        logs: build_ui_logs(&runner_response.job.logs.stdout, &runner_response.job.logs.stderr),
-        execution_output: Some("Python execution started in Docker.".to_string()),
+        logs: vec![],
+        execution_output: Some("Job claimed. Launching Docker container.".to_string()),
         execution_error: None,
     };
+    runtime.active_job = Some(ui_job.clone());
+    runtime.active_execution = Some(ActiveExecution {
+        remote_job_id: job.id.clone(),
+        request: runner_request_for_marketplace_job(&job),
+    });
 
     let assign_log = runtime.push_log(
-        LogLevel::Success,
+        LogLevel::Info,
         &format!(
-            "Backend assigned {}. Docker runner completed job {} with state {}.",
-            ui_job.name, runner_response.job.id, runner_response.job.state
+            "Backend assigned {}. Waiting for local Docker execution to begin.",
+            ui_job.name
         ),
     );
 
-    let mut events = vec![
+    Ok(vec![
         RuntimeEvent::StatusChanged(WorkerStatusChangedEvent {
             event_type: "worker_status_changed",
             status: WorkerStatus::Busy,
@@ -1670,104 +1655,11 @@ fn poll_for_assignment(http: &Client, runtime: &mut WorkerRuntime) -> Result<Vec
             log: assign_log,
             job_id: Some(job.id.clone()),
         }),
-    ];
-
-    let stdout = runner_response
-        .job
-        .result
-        .as_ref()
-        .map(|result| result.logs.stdout.clone())
-        .unwrap_or_else(|| runner_response.job.logs.stdout.clone());
-    let stderr = runner_response
-        .job
-        .result
-        .as_ref()
-        .map(|result| result.logs.stderr.clone())
-        .unwrap_or_else(|| runner_response.job.logs.stderr.clone());
-    let exit_code = runner_response
-        .job
-        .result
-        .as_ref()
-        .and_then(|result| result.exit_code)
-        .unwrap_or(if runner_response.job.error.is_some() { 1 } else { 0 });
-
-    if is_successful_runner_completion(&runner_response.job) {
-        let _: Value = patch_json(
-            http,
-            &format!("{}/api/jobs/{}/complete", runtime.api_url, job.id),
-            auth_headers(&session)?,
-            &json!({
-                "machineId": session.provider_id,
-                "stdout": stdout,
-                "stderr": stderr,
-                "exitCode": exit_code
-            }),
-        )?;
-
-        ui_job.status = JobStatus::Completed;
-        ui_job.progress = 100.0;
-        ui_job.execution_output = (!stdout.trim().is_empty()).then(|| limit_output(&stdout));
-        ui_job.execution_error = (!stderr.trim().is_empty()).then(|| limit_output(&stderr));
-        runtime.machine.status = if runtime.pause_requested {
-            WorkerStatus::Paused
-        } else {
-            WorkerStatus::Idle
-        };
-        runtime.recent_jobs.insert(0, ui_job.clone());
-        runtime.recent_jobs.truncate(8);
-
-        events.push(RuntimeEvent::StatusChanged(WorkerStatusChangedEvent {
-            event_type: "worker_status_changed",
-            status: runtime.machine.status.clone(),
-            last_heartbeat_at: runtime.machine.last_heartbeat_at.clone(),
-            uptime_seconds: runtime.machine.uptime_seconds,
-        }));
-        events.push(RuntimeEvent::JobCompleted(JobCompletedEvent {
-            event_type: "job_completed",
+        RuntimeEvent::JobProgress(JobProgressEvent {
+            event_type: "job_progress",
             job: ui_job,
-            recent_jobs: runtime.recent_jobs.clone(),
-        }));
-    } else {
-        let failure = runner_failure_message(&runner_response.job);
-        let _: Value = patch_json(
-            http,
-            &format!("{}/api/jobs/{}/fail", runtime.api_url, job.id),
-            auth_headers(&session)?,
-            &json!({
-                "machineId": session.provider_id,
-                "error": limit_output(&failure),
-                "stdout": stdout,
-                "stderr": if stderr.trim().is_empty() { failure.clone() } else { stderr.clone() },
-                "exitCode": exit_code
-            }),
-        )?;
-
-        ui_job.status = JobStatus::Failed;
-        ui_job.progress = 100.0;
-        ui_job.execution_output = (!stdout.trim().is_empty()).then(|| limit_output(&stdout));
-        ui_job.execution_error = Some(limit_output(&failure));
-        runtime.machine.status = if runtime.pause_requested {
-            WorkerStatus::Paused
-        } else {
-            WorkerStatus::Idle
-        };
-        runtime.recent_jobs.insert(0, ui_job.clone());
-        runtime.recent_jobs.truncate(8);
-
-        events.push(RuntimeEvent::StatusChanged(WorkerStatusChangedEvent {
-            event_type: "worker_status_changed",
-            status: runtime.machine.status.clone(),
-            last_heartbeat_at: runtime.machine.last_heartbeat_at.clone(),
-            uptime_seconds: runtime.machine.uptime_seconds,
-        }));
-        events.push(RuntimeEvent::JobCompleted(JobCompletedEvent {
-            event_type: "job_completed",
-            job: ui_job,
-            recent_jobs: runtime.recent_jobs.clone(),
-        }));
-    }
-
-    Ok(events)
+        }),
+    ])
 }
 
 fn sync_active_execution(
@@ -1775,22 +1667,27 @@ fn sync_active_execution(
     runtime: &mut WorkerRuntime,
     execution: ActiveExecution,
 ) -> Result<Vec<RuntimeEvent>, String> {
-    let runner_response: RunnerJobResponse = get_json(
-        http,
-        &format!("{}/jobs/{}", runtime.runner_url, execution.runner_job_id),
-        HeaderMap::new(),
-    )?;
     let session = runtime
         .provider_session
         .clone()
         .ok_or_else(|| "worker lost provider session during execution".to_string())?;
+    let runner_start_log = runtime.push_log(
+        LogLevel::Info,
+        &format!("Launching Docker for {}.", execution.remote_job_id),
+    );
+    let runner_response: RunnerExecuteResponse = post_json(
+        http,
+        &format!("{}/jobs/execute-sync", runtime.runner_url),
+        runner_headers()?,
+        &execution.request,
+    )?;
 
     let runner_job = runner_response.job;
-    let stdout_delta = slice_delta(&runner_job.logs.stdout, execution.last_stdout_len);
-    let stderr_delta = slice_delta(&runner_job.logs.stderr, execution.last_stderr_len);
+    let stdout_delta = runner_job.logs.stdout.clone();
+    let stderr_delta = runner_job.logs.stderr.clone();
 
     if let Some(active_job) = runtime.active_job.as_mut() {
-        active_job.progress = progress_for_runner_state(&runner_job.state, active_job.progress);
+        active_job.progress = 85.0;
         active_job.logs = build_ui_logs(&runner_job.logs.stdout, &runner_job.logs.stderr);
         active_job.cpu_usage = clamp(runtime.settings.cpu_limit * 0.78, 18.0, runtime.settings.cpu_limit);
         active_job.memory_usage = 50.0;
@@ -1800,33 +1697,29 @@ fn sync_active_execution(
             .then(|| limit_output(&runner_job.logs.stderr));
     }
 
-    let progress_message = build_progress_message(&runner_job, &stdout_delta, &stderr_delta);
-    if progress_message.as_deref().is_some() || execution.last_state != runner_job.state {
-        let message = progress_message.unwrap_or_else(|| format!("Runner state changed to {}", runner_job.state));
-        let _: Value = patch_json(
-            http,
-            &format!("{}/api/jobs/{}/progress", runtime.api_url, execution.remote_job_id),
-            auth_headers(&session)?,
-            &json!({
-                "machineId": session.provider_id,
-                "stdout": if stdout_delta.trim().is_empty() { Value::Null } else { Value::String(limit_output(&stdout_delta)) },
-                "stderr": if stderr_delta.trim().is_empty() { Value::Null } else { Value::String(limit_output(&stderr_delta)) },
-                "message": limit_output(&message)
-            }),
-        )?;
-    }
-
-    if let Some(active_execution) = runtime.active_execution.as_mut() {
-        active_execution.last_stdout_len = runner_job.logs.stdout.len();
-        active_execution.last_stderr_len = runner_job.logs.stderr.len();
-        active_execution.last_state = runner_job.state.clone();
-    }
+    let message = build_progress_message(&runner_job, &stdout_delta, &stderr_delta)
+        .unwrap_or_else(|| "Docker execution finished. Uploading result.".to_string());
+    let _: Value = patch_json(
+        http,
+        &format!("{}/api/jobs/{}/progress", runtime.api_url, execution.remote_job_id),
+        auth_headers(&session)?,
+        &json!({
+            "machineId": session.provider_id,
+            "stdout": if stdout_delta.trim().is_empty() { Value::Null } else { Value::String(limit_output(&stdout_delta)) },
+            "stderr": if stderr_delta.trim().is_empty() { Value::Null } else { Value::String(limit_output(&stderr_delta)) },
+            "message": limit_output(&message)
+        }),
+    )?;
 
     let Some(active_job) = runtime.active_job.clone() else {
         return Ok(vec![]);
     };
 
-    let mut events = Vec::new();
+    let mut events = vec![RuntimeEvent::LogEmitted(ActivityLogEvent {
+        event_type: "log_emitted",
+        log: runner_start_log,
+        job_id: Some(execution.remote_job_id.clone()),
+    })];
     if !stdout_delta.is_empty() {
         let log = runtime.push_log(
             LogLevel::Info,
@@ -1850,8 +1743,7 @@ fn sync_active_execution(
         }));
     }
 
-    if is_terminal_state(&runner_job.state) {
-        if is_successful_runner_completion(&runner_job) {
+    if is_successful_runner_completion(&runner_job) {
             let _: Value = patch_json(
                 http,
                 &format!("{}/api/jobs/{}/complete", runtime.api_url, execution.remote_job_id),
@@ -1937,59 +1829,55 @@ fn sync_active_execution(
                 recent_jobs: runtime.recent_jobs.clone(),
             }));
             return Ok(events);
-        }
-
-        let failure = runner_failure_message(&runner_job);
-        let _: Value = patch_json(
-            http,
-            &format!("{}/api/jobs/{}/fail", runtime.api_url, execution.remote_job_id),
-            auth_headers(&session)?,
-            &json!({
-                "machineId": session.provider_id,
-                "error": limit_output(&failure)
-            }),
-        )?;
-
-        let mut failed_job = active_job.clone();
-        failed_job.status = JobStatus::Failed;
-        failed_job.progress = 100.0;
-        failed_job.execution_error = Some(limit_output(&failure));
-
-        runtime.active_execution = None;
-        runtime.active_job = None;
-        runtime.machine.status = if runtime.pause_requested {
-            WorkerStatus::Paused
-        } else {
-            WorkerStatus::Idle
-        };
-        runtime.recent_jobs.insert(0, failed_job.clone());
-        runtime.recent_jobs.truncate(8);
-        let log = runtime.push_log(
-            LogLevel::Error,
-            &format!("{} failed in Docker: {}.", failed_job.name, limit_output(&failure)),
-        );
-        events.push(RuntimeEvent::StatusChanged(WorkerStatusChangedEvent {
-            event_type: "worker_status_changed",
-            status: runtime.machine.status.clone(),
-            last_heartbeat_at: runtime.machine.last_heartbeat_at.clone(),
-            uptime_seconds: runtime.machine.uptime_seconds,
-        }));
-        events.push(RuntimeEvent::LogEmitted(ActivityLogEvent {
-            event_type: "log_emitted",
-            log,
-            job_id: Some(execution.remote_job_id.clone()),
-        }));
-        events.push(RuntimeEvent::JobCompleted(JobCompletedEvent {
-            event_type: "job_completed",
-            job: failed_job,
-            recent_jobs: runtime.recent_jobs.clone(),
-        }));
-        return Ok(events);
     }
 
-    events.push(RuntimeEvent::JobProgress(JobProgressEvent {
-        event_type: "job_progress",
-        job: active_job,
+    let failure = runner_failure_message(&runner_job);
+    let _: Value = patch_json(
+        http,
+        &format!("{}/api/jobs/{}/fail", runtime.api_url, execution.remote_job_id),
+        auth_headers(&session)?,
+        &json!({
+            "machineId": session.provider_id,
+            "error": limit_output(&failure),
+            "stdout": if stdout_delta.trim().is_empty() { Value::Null } else { Value::String(limit_output(&stdout_delta)) },
+            "stderr": if stderr_delta.trim().is_empty() { Value::String(limit_output(&failure)) } else { Value::String(limit_output(&stderr_delta)) }
+        }),
+    )?;
+
+    let mut failed_job = active_job.clone();
+    failed_job.status = JobStatus::Failed;
+    failed_job.progress = 100.0;
+    failed_job.execution_output = (!stdout_delta.trim().is_empty()).then(|| limit_output(&stdout_delta));
+    failed_job.execution_error = Some(limit_output(&failure));
+
+    runtime.active_execution = None;
+    runtime.active_job = None;
+    runtime.machine.status = if runtime.pause_requested {
+        WorkerStatus::Paused
+    } else {
+        WorkerStatus::Idle
+    };
+    runtime.recent_jobs.insert(0, failed_job.clone());
+    runtime.recent_jobs.truncate(8);
+    let log = runtime.push_log(
+        LogLevel::Error,
+        &format!("{} failed in Docker: {}.", failed_job.name, limit_output(&failure)),
+    );
+    events.push(RuntimeEvent::StatusChanged(WorkerStatusChangedEvent {
+        event_type: "worker_status_changed",
+        status: runtime.machine.status.clone(),
+        last_heartbeat_at: runtime.machine.last_heartbeat_at.clone(),
+        uptime_seconds: runtime.machine.uptime_seconds,
+    }));
+    events.push(RuntimeEvent::LogEmitted(ActivityLogEvent {
+        event_type: "log_emitted",
+        log,
+        job_id: Some(execution.remote_job_id.clone()),
+    }));
+    events.push(RuntimeEvent::JobCompleted(JobCompletedEvent {
+        event_type: "job_completed",
+        job: failed_job,
+        recent_jobs: runtime.recent_jobs.clone(),
     }));
     Ok(events)
 }
@@ -2001,13 +1889,6 @@ fn cancel_remote_execution(
 ) -> Option<String> {
     let execution = runtime.active_execution.clone()?;
     let session = runtime.provider_session.clone()?;
-
-    let runner_cancel_result: Result<Value, String> = post_json(
-        http,
-        &format!("{}/jobs/{}/cancel", runtime.runner_url, execution.runner_job_id),
-        runner_headers().unwrap_or_else(|_| HeaderMap::new()),
-        &json!({}),
-    );
 
     let backend_fail_result: Result<Value, String> = patch_json(
         http,
@@ -2022,14 +1903,9 @@ fn cancel_remote_execution(
     runtime.active_execution = None;
     runtime.active_job = None;
 
-    match (runner_cancel_result, backend_fail_result) {
-        (Ok(_), Ok(_)) => None,
-        (runner, backend) => Some(format!(
-            "runner cancel: {}; backend fail: {}",
-            runner.err().unwrap_or_else(|| "ok".to_string()),
-            backend.err().unwrap_or_else(|| "ok".to_string())
-        )),
-    }
+    backend_fail_result
+        .err()
+        .map(|error| format!("backend fail: {error}"))
 }
 
 fn runner_request_for_marketplace_job(job: &RemoteMarketplaceJob) -> RunnerExecuteRequest {
