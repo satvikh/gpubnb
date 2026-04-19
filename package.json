@@ -10,6 +10,8 @@
     "test": "node --import tsx --test \"lib/**/*.test.ts\"",
     "tauri": "tauri dev",
     "tauri:build": "tauri build --bundles app",
+    "solana:master:create": "tsx scripts/create-master-wallet.ts",
+    "solana:consumers:fund": "tsx scripts/fund-consumer-wallets.ts",
     "worker": "tsx worker/index.ts",
     "worker:dev": "tsx watch worker/index.ts"
   },

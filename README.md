@@ -98,6 +98,8 @@ MONGODB_DB_NAME=gpubnb
 GPUBNB_API_URL=http://localhost:3000
 GPUBNB_PROVIDER_ID=
 GPUBNB_PROVIDER_TOKEN=
+COMPUTEBNB_MASTER_WALLET_SECRET_KEY=
+COMPUTEBNB_CONSUMER_DEMO_TARGET_SOL=1
 ```
 
 The app now builds cleanly even when Mongo is not configured, but backend-powered marketplace pages and APIs will show database-unavailable behavior until `MONGODB_URI` is set.
@@ -138,6 +140,24 @@ npm run dev
 ```
 
 The runner listens on `http://localhost:4317`. See `worker-runner/README.md` for endpoint and payload examples.
+
+## Solana Devnet Demo Funding
+
+Create a devnet master wallet and save it to `.env.local`:
+
+```bash
+npm run solana:master:create -- --write-env
+```
+
+The script prints the wallet address and secret key, then requests a devnet airdrop. Set `COMPUTEBNB_MASTER_AIRDROP_SOL` to change the airdrop amount; it defaults to `5`.
+
+Top up every consumer wallet to the demo target balance:
+
+```bash
+npm run solana:consumers:fund
+```
+
+Set `COMPUTEBNB_CONSUMER_DEMO_TARGET_SOL` to control the target balance per consumer wallet; it defaults to `1`. The script skips wallets that already have at least the target balance and prints each transfer signature.
 
 ## Demo Flow
 
