@@ -22,6 +22,8 @@ export interface Job {
   type: JobType;
   status: JobStatus;
   input: string;
+  requiredCapabilities?: string[];
+  runnerPayload?: Record<string, unknown>;
   result?: string;
   error?: string;
   budgetCents: number;
