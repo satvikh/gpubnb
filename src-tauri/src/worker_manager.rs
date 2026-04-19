@@ -1697,20 +1697,6 @@ fn sync_active_execution(
             .then(|| limit_output(&runner_job.logs.stderr));
     }
 
-    let message = build_progress_message(&runner_job, &stdout_delta, &stderr_delta)
-        .unwrap_or_else(|| "Docker execution finished. Uploading result.".to_string());
-    let _: Value = patch_json(
-        http,
-        &format!("{}/api/jobs/{}/progress", runtime.api_url, execution.remote_job_id),
-        auth_headers(&session)?,
-        &json!({
-            "machineId": session.provider_id,
-            "stdout": if stdout_delta.trim().is_empty() { Value::Null } else { Value::String(limit_output(&stdout_delta)) },
-            "stderr": if stderr_delta.trim().is_empty() { Value::Null } else { Value::String(limit_output(&stderr_delta)) },
-            "message": limit_output(&message)
-        }),
-    )?;
-
     let Some(active_job) = runtime.active_job.clone() else {
         return Ok(vec![]);
     };
@@ -1720,6 +1706,33 @@ fn sync_active_execution(
         log: runner_start_log,
         job_id: Some(execution.remote_job_id.clone()),
     })];
+    let message = build_progress_message(&runner_job, &stdout_delta, &stderr_delta)
+        .unwrap_or_else(|| "Docker execution finished. Uploading result.".to_string());
+    let mut progress_payload = serde_json::Map::new();
+    progress_payload.insert("machineId".to_string(), Value::String(session.provider_id.clone()));
+    progress_payload.insert("message".to_string(), Value::String(limit_output(&message)));
+    if !stdout_delta.trim().is_empty() {
+        progress_payload.insert("stdout".to_string(), Value::String(limit_output(&stdout_delta)));
+    }
+    if !stderr_delta.trim().is_empty() {
+        progress_payload.insert("stderr".to_string(), Value::String(limit_output(&stderr_delta)));
+    }
+    if let Err(error) = patch_json::<Value>(
+        http,
+        &format!("{}/api/jobs/{}/progress", runtime.api_url, execution.remote_job_id),
+        auth_headers(&session)?,
+        &Value::Object(progress_payload),
+    ) {
+        let progress_log = runtime.push_log(
+            LogLevel::Warning,
+            &format!("Progress update failed for {}: {}.", execution.remote_job_id, error),
+        );
+        events.push(RuntimeEvent::LogEmitted(ActivityLogEvent {
+            event_type: "log_emitted",
+            log: progress_log,
+            job_id: Some(execution.remote_job_id.clone()),
+        }));
+    }
     if !stdout_delta.is_empty() {
         let log = runtime.push_log(
             LogLevel::Info,
