@@ -8,6 +8,7 @@ export interface IJob extends Document {
   type: string;
   status: JobStatus;
   machineId: Types.ObjectId;
+  consumerId?: Types.ObjectId;
   source: string;
   stdout: string;
   stderr: string;
@@ -16,6 +17,10 @@ export interface IJob extends Document {
   jobCostCents?: number;
   providerPayoutCents?: number;
   platformFeeCents?: number;
+  solanaPaymentLamports?: number;
+  solanaPaymentSignature?: string;
+  solanaPaymentStatus?: "pending" | "settled" | "failed";
+  solanaCentsPerSol?: number;
   startedAt?: Date;
   completedAt?: Date;
   actualRuntimeSeconds?: number;
@@ -36,6 +41,7 @@ const JobSchema = new Schema<IJob>(
       default: "queued",
     },
     machineId: { type: Schema.Types.ObjectId, ref: "Machine", required: true },
+    consumerId: { type: Schema.Types.ObjectId, ref: "Consumer" },
     source: { type: String, required: true },
     stdout: { type: String, default: "" },
     stderr: { type: String, default: "" },
@@ -44,6 +50,14 @@ const JobSchema = new Schema<IJob>(
     jobCostCents: { type: Number, min: 0 },
     providerPayoutCents: { type: Number, min: 0 },
     platformFeeCents: { type: Number, min: 0 },
+    solanaPaymentLamports: { type: Number, min: 0 },
+    solanaPaymentSignature: { type: String },
+    solanaPaymentStatus: {
+      type: String,
+      enum: ["pending", "settled", "failed"],
+      default: "pending",
+    },
+    solanaCentsPerSol: { type: Number, min: 1 },
     startedAt: { type: Date },
     completedAt: { type: Date },
     actualRuntimeSeconds: { type: Number, min: 0 },
@@ -55,6 +69,7 @@ const JobSchema = new Schema<IJob>(
 );
 
 JobSchema.index({ machineId: 1, status: 1, createdAt: 1 });
+JobSchema.index({ consumerId: 1, createdAt: -1 });
 JobSchema.index({ status: 1, createdAt: -1 });
 JobSchema.index({ createdAt: -1 });
 

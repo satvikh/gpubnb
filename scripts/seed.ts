@@ -311,7 +311,12 @@ async function seed() {
   await Promise.all([
     db.collection("machines").createIndex({ status: 1, lastHeartbeatAt: -1 }),
     db.collection("machines").createIndex({ createdAt: -1 }),
+    db.collection("machines").createIndex({ walletAddress: 1 }, { sparse: true }),
+    db.collection("consumers").createIndex({ email: 1 }, { sparse: true }),
+    db.collection("consumers").createIndex({ walletAddress: 1 }, { unique: true }),
+    db.collection("consumers").createIndex({ createdAt: -1 }),
     db.collection("jobs").createIndex({ machineId: 1, status: 1, createdAt: 1 }),
+    db.collection("jobs").createIndex({ consumerId: 1, createdAt: -1 }),
     db.collection("jobs").createIndex({ status: 1, createdAt: -1 }),
     db.collection("jobs").createIndex({ createdAt: -1 }),
     db.collection("jobevents").createIndex({ jobId: 1, createdAt: -1 }),
@@ -319,6 +324,7 @@ async function seed() {
     db.collection("jobevents").createIndex({ createdAt: -1 }),
     db.collection("ledgerentries").createIndex({ jobId: 1, type: 1 }, { unique: true }),
     db.collection("ledgerentries").createIndex({ machineId: 1, createdAt: -1 }),
+    db.collection("ledgerentries").createIndex({ consumerId: 1, createdAt: -1 }),
   ]);
 
   console.log(`Seeded ${machineIds.length} machines`);

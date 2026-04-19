@@ -30,6 +30,8 @@ export function formatProvider(machine: {
   successRate?: number;
   lastHeartbeatAt?: Date | null;
   createdAt?: Date | null;
+  walletAddress?: string | null;
+  walletNetwork?: string | null;
 }) {
   const id = String(machine._id);
 
@@ -49,6 +51,8 @@ export function formatProvider(machine: {
       calculateSuccessRate(machine.completedJobs ?? 0, machine.failedJobs ?? 0),
     lastHeartbeatAt: machine.lastHeartbeatAt ?? null,
     createdAt: machine.createdAt ?? null,
+    walletAddress: machine.walletAddress ?? null,
+    walletNetwork: machine.walletNetwork ?? null,
   };
 }
 
@@ -61,6 +65,7 @@ export function formatJob(
     type?: string | null;
     status: string;
     machineId: unknown;
+    consumerId?: unknown;
     source: string;
     stdout?: string | null;
     stderr?: string | null;
@@ -69,6 +74,10 @@ export function formatJob(
     jobCostCents?: number | null;
     providerPayoutCents?: number | null;
     platformFeeCents?: number | null;
+    solanaPaymentLamports?: number | null;
+    solanaPaymentSignature?: string | null;
+    solanaPaymentStatus?: string | null;
+    solanaCentsPerSol?: number | null;
     startedAt?: Date | null;
     completedAt?: Date | null;
     actualRuntimeSeconds?: number | null;
@@ -90,6 +99,7 @@ export function formatJob(
     type: job.type ?? "python",
     status: job.status,
     machineId,
+    consumerId: job.consumerId ? String(job.consumerId) : null,
     machineName: machineName ?? null,
     assignedProviderId: machineId,
     assignedProviderName: machineName ?? null,
@@ -113,6 +123,10 @@ export function formatJob(
     jobCostCents: job.jobCostCents ?? null,
     providerPayoutCents: job.providerPayoutCents ?? null,
     platformFeeCents: job.platformFeeCents ?? null,
+    solanaPaymentLamports: job.solanaPaymentLamports ?? null,
+    solanaPaymentSignature: job.solanaPaymentSignature ?? null,
+    solanaPaymentStatus: job.solanaPaymentStatus ?? null,
+    solanaCentsPerSol: job.solanaCentsPerSol ?? null,
     proofHash: job.proofHash ?? null,
     createdAt: job.createdAt ?? null,
     updatedAt: job.updatedAt ?? null,

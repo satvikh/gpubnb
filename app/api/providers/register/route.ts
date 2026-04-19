@@ -4,6 +4,7 @@ import dbConnect from "@/lib/db";
 import { calculateSuccessRate, formatProvider, getDbUnavailablePayload } from "@/lib/marketplace";
 import { Machine } from "@/lib/models";
 import { createProviderToken, hashProviderToken } from "@/lib/provider-auth";
+import { generateSolanaWallet } from "@/lib/solana";
 
 const schema = z.object({
   name: z.string().min(1),
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
 
     const token = createProviderToken();
     const tokenHash = hashProviderToken(token);
+    const wallet = generateSolanaWallet();
 
     const machine = await Machine.create({
       name: input.name,
@@ -27,7 +29,8 @@ export async function POST(request: Request) {
       status: "online",
       lastHeartbeatAt: new Date(),
       successRate: calculateSuccessRate(0, 0),
-      tokenHash
+      tokenHash,
+      ...wallet
     });
 
     const payload = {

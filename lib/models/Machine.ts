@@ -14,6 +14,9 @@ export interface IMachine extends Document {
   tokenHash?: string;
   lastHeartbeatAt?: Date;
   trustScore: number;
+  walletAddress?: string;
+  walletSecretKey?: string;
+  walletNetwork?: "devnet";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -35,6 +38,9 @@ const MachineSchema = new Schema<IMachine>(
     tokenHash: { type: String },
     lastHeartbeatAt: { type: Date },
     trustScore: { type: Number, default: 100, min: 0, max: 100 },
+    walletAddress: { type: String },
+    walletSecretKey: { type: String },
+    walletNetwork: { type: String, enum: ["devnet"] },
   },
   {
     timestamps: true,
@@ -44,6 +50,7 @@ const MachineSchema = new Schema<IMachine>(
 
 MachineSchema.index({ status: 1, lastHeartbeatAt: -1 });
 MachineSchema.index({ createdAt: -1 });
+MachineSchema.index({ walletAddress: 1 }, { sparse: true });
 
 const Machine: Model<IMachine> =
   mongoose.models.Machine || mongoose.model<IMachine>("Machine", MachineSchema);

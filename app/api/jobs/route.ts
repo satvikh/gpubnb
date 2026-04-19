@@ -1,14 +1,18 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import dbConnect from "@/lib/db";
-import { Job, JobEvent, Machine } from "@/lib/models";
+import { Consumer, Job, JobEvent, Machine } from "@/lib/models";
 import { formatJob, getDbUnavailablePayload, listJobsSummary } from "@/lib/marketplace";
+import { generateSolanaWallet, requestInitialConsumerAirdrop } from "@/lib/solana";
 
 const schema = z.object({
   title: z.string().min(1),
   type: z.string().optional(),
   machineId: z.string().min(1).optional(),
   providerId: z.string().min(1).optional(),
+  consumerId: z.string().min(1).optional(),
+  consumerName: z.string().min(1).optional(),
+  consumerEmail: z.string().email().optional(),
   source: z.string().min(1).optional(),
   input: z.string().min(1).optional(),
   budgetCents: z.coerce.number().int().positive().optional(),
@@ -29,6 +33,31 @@ async function resolveMachineId(candidate?: string | null) {
   }
 
   return null;
+}
+
+async function resolveConsumer(input: {
+  consumerId?: string;
+  consumerName?: string;
+  consumerEmail?: string;
+}) {
+  if (input.consumerId) {
+    return Consumer.findById(input.consumerId);
+  }
+
+  const wallet = generateSolanaWallet();
+  let initialAirdropSignature: string | undefined;
+  try {
+    initialAirdropSignature = await requestInitialConsumerAirdrop(wallet.walletAddress);
+  } catch (error) {
+    console.warn("Devnet consumer airdrop failed", error);
+  }
+
+  return Consumer.create({
+    name: input.consumerName ?? "Guest Consumer",
+    email: input.consumerEmail,
+    ...wallet,
+    initialAirdropSignature,
+  });
 }
 
 export async function GET(request: Request) {
@@ -75,10 +104,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Machine not found" }, { status: 404 });
     }
 
+    const consumer = await resolveConsumer({
+      consumerId: input.consumerId,
+      consumerName: input.consumerName,
+      consumerEmail: input.consumerEmail,
+    });
+    if (!consumer) {
+      return NextResponse.json({ error: "Consumer not found" }, { status: 404 });
+    }
+
     const job = await Job.create({
       title: input.title,
       type: input.type ?? "python",
       machineId: machine._id,
+      consumerId: consumer._id,
       source,
       budgetCents: input.budgetCents ?? 500,
       status: "queued",
@@ -94,7 +133,16 @@ export async function POST(request: Request) {
     });
 
     if (contentType.includes("application/json")) {
-      return NextResponse.json({ job: formatJob(job, machine.name) }, { status: 201 });
+      return NextResponse.json({
+        job: formatJob(job, machine.name),
+        consumer: {
+          id: String(consumer._id),
+          name: consumer.name,
+          walletAddress: consumer.walletAddress,
+          walletNetwork: consumer.walletNetwork,
+          initialAirdropSignature: consumer.initialAirdropSignature ?? null,
+        },
+      }, { status: 201 });
     }
 
     return NextResponse.redirect(new URL(`/jobs/${job._id}/results`, request.url), { status: 303 });

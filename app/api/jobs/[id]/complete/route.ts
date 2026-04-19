@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import dbConnect from "@/lib/db";
-import { Job, JobEvent, Machine } from "@/lib/models";
+import { Consumer, Job, JobEvent, Machine } from "@/lib/models";
 import { buildProofHash, calculateSuccessRate, formatJob, getDbUnavailablePayload } from "@/lib/marketplace";
 import { calculateRuntimePricing } from "@/lib/pricing";
 import { recordCompletedJobLedger } from "@/lib/ledger";
 import { requireProvider } from "@/lib/provider-auth";
+import {
+  SOLANA_CENTS_PER_SOL,
+  centsToLamports,
+  generateSolanaWallet,
+  transferDevnetSol,
+} from "@/lib/solana";
 
 const schema = z.object({
   machineId: z.string().min(1).optional(),
@@ -58,11 +64,54 @@ export async function POST(
       1,
       Math.round((completedAt.getTime() - startedAt.getTime()) / 1000)
     );
-    const { jobCostCents, providerPayoutCents, platformFeeCents } = calculateRuntimePricing({
+    const { jobCostCents } = calculateRuntimePricing({
       runtimeSeconds,
       hourlyRateCents: machine.hourlyRateCents,
       budgetCents: job.budgetCents
     });
+    const providerPayoutCents = jobCostCents;
+    const platformFeeCents = 0;
+
+    if (!job.consumerId) {
+      return NextResponse.json(
+        { error: "Job has no consumer wallet attached for Solana payment" },
+        { status: 409 }
+      );
+    }
+
+    const consumer = await Consumer.findById(job.consumerId);
+    if (!consumer) {
+      return NextResponse.json({ error: "Consumer wallet not found" }, { status: 404 });
+    }
+
+    if (!machine.walletAddress || !machine.walletSecretKey) {
+      const wallet = generateSolanaWallet();
+      machine.walletAddress = wallet.walletAddress;
+      machine.walletSecretKey = wallet.walletSecretKey;
+      machine.walletNetwork = wallet.walletNetwork;
+      await machine.save();
+    }
+
+    const solanaPaymentLamports = centsToLamports(jobCostCents);
+    let solanaPaymentSignature: string;
+    try {
+      solanaPaymentSignature = await transferDevnetSol({
+        fromSecretKey: consumer.walletSecretKey,
+        toWalletAddress: machine.walletAddress,
+        lamports: solanaPaymentLamports,
+      });
+    } catch (error) {
+      job.solanaPaymentStatus = "failed";
+      job.solanaPaymentLamports = solanaPaymentLamports;
+      job.solanaCentsPerSol = SOLANA_CENTS_PER_SOL;
+      await job.save();
+
+      const message = error instanceof Error ? error.message : "Solana payment failed";
+      return NextResponse.json(
+        { error: "Solana devnet payment failed", message },
+        { status: 402 }
+      );
+    }
 
     job.status = "completed";
     job.startedAt = startedAt;
@@ -74,6 +123,10 @@ export async function POST(
     job.jobCostCents = jobCostCents;
     job.providerPayoutCents = providerPayoutCents;
     job.platformFeeCents = platformFeeCents;
+    job.solanaPaymentLamports = solanaPaymentLamports;
+    job.solanaPaymentSignature = solanaPaymentSignature;
+    job.solanaPaymentStatus = "settled";
+    job.solanaCentsPerSol = SOLANA_CENTS_PER_SOL;
     job.proofHash = buildProofHash(stdout, stderr);
     job.failureReason = undefined;
     job.error = undefined;
@@ -82,10 +135,19 @@ export async function POST(
     await recordCompletedJobLedger({
       jobId: job._id,
       machineId: machine._id,
+      consumerId: consumer._id,
       budgetCents: jobCostCents,
       providerPayoutCents,
-      platformFeeCents
+      platformFeeCents,
+      solanaLamports: solanaPaymentLamports,
+      solanaSignature: solanaPaymentSignature,
+      fromWalletAddress: consumer.walletAddress,
+      toWalletAddress: machine.walletAddress,
+      solanaCentsPerSol: SOLANA_CENTS_PER_SOL
     });
+
+    consumer.totalSpentCents += jobCostCents;
+    await consumer.save();
 
     machine.completedJobs += 1;
     machine.successRate = calculateSuccessRate(machine.completedJobs, machine.failedJobs);

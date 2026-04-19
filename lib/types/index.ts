@@ -19,6 +19,8 @@ export interface Machine {
   successRate?: number;
   lastHeartbeatAt?: string;
   token?: string;
+  walletAddress?: string | null;
+  walletNetwork?: string | null;
   createdAt: string;
 }
 
@@ -30,6 +32,7 @@ export interface Job {
   type: string;
   status: JobStatus;
   machineId: string;
+  consumerId?: string | null;
   machineName?: string | null;
   assignedProviderId?: string | null;
   assignedProviderName?: string | null;
@@ -47,6 +50,10 @@ export interface Job {
   jobCostCents?: number | null;
   providerPayoutCents?: number | null;
   platformFeeCents?: number | null;
+  solanaPaymentLamports?: number | null;
+  solanaPaymentSignature?: string | null;
+  solanaPaymentStatus?: string | null;
+  solanaCentsPerSol?: number | null;
   proofHash?: string | null;
   retryCount?: number;
   startedAt?: string;
