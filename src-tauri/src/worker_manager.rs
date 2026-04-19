@@ -1832,7 +1832,7 @@ fn runner_request_for_marketplace_job(job: &RemoteMarketplaceJob) -> RunnerExecu
     RunnerExecuteRequest {
         id: Some(job.id.clone()),
         job_type: "python_script".to_string(),
-        image: Some("computebnb/python-runner:local".to_string()),
+        image: Some("python:3.12-slim".to_string()),
         command: None,
         script: Some(job.code.clone()),
         input: Some(json!({

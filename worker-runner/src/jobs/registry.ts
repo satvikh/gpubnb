@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { JobLimits, JobRecord, JobRequest, NormalizedJob } from "../types.js";
 
 const DEFAULT_IMAGES = {
-  python_script: "computebnb/python-runner:local",
+  python_script: "python:3.12-slim",
   inference: "computebnb/python-runner:local",
   benchmark_demo: "computebnb/python-runner:local"
 } as const;
