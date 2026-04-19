@@ -1,0 +1,10 @@
+[mcp_servers.mongodb]
+command = "powershell"
+args = [
+  "-NoProfile",
+  "-ExecutionPolicy",
+  "Bypass",
+  "-File",
+  "C:\\Users\\kushagra\\OneDrive\\Documents\\CS Projects\\gpubnb\\.codex\\mongodb-mcp.ps1",
+]
+
