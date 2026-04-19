@@ -3,7 +3,11 @@ use std::{
     net::TcpStream,
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    thread::JoinHandle,
     time::{Duration, Instant},
 };
 
@@ -14,7 +18,7 @@ use reqwest::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
-use tauri::{async_runtime::JoinHandle, AppHandle, Emitter};
+use tauri::{AppHandle, Emitter};
 
 const STATUS_CHANGED_EVENT: &str = "worker-status-changed";
 const HEARTBEAT_EVENT: &str = "worker-heartbeat";
@@ -37,6 +41,7 @@ const TICK_INTERVAL_MS: u64 = 2000;
 pub struct WorkerManager {
     runtime: Arc<Mutex<WorkerRuntime>>,
     task: Arc<Mutex<Option<JoinHandle<()>>>>,
+    stop_signal: Arc<AtomicBool>,
     sandbox_runner: Arc<Mutex<Option<Child>>>,
     http: Client,
 }
@@ -51,6 +56,7 @@ impl WorkerManager {
         Self {
             runtime: Arc::new(Mutex::new(WorkerRuntime::new())),
             task: Arc::new(Mutex::new(None)),
+            stop_signal: Arc::new(AtomicBool::new(false)),
             sandbox_runner: Arc::new(Mutex::new(None)),
             http,
         }
@@ -113,11 +119,14 @@ impl WorkerManager {
         }
 
         let manager = self.clone();
-        *task = Some(tauri::async_runtime::spawn(async move {
-            loop {
-                tokio::time::sleep(Duration::from_millis(TICK_INTERVAL_MS)).await;
-                manager.tick(&app);
+        let stop_signal = self.stop_signal.clone();
+        stop_signal.store(false, Ordering::SeqCst);
+        *task = Some(std::thread::spawn(move || loop {
+            if stop_signal.load(Ordering::SeqCst) {
+                break;
             }
+            std::thread::sleep(Duration::from_millis(TICK_INTERVAL_MS));
+            manager.tick(&app);
         }));
     }
 
@@ -126,8 +135,9 @@ impl WorkerManager {
     }
 
     fn stop_runner(&self) {
+        self.stop_signal.store(true, Ordering::SeqCst);
         if let Some(task) = self.task.lock().expect("worker task poisoned").take() {
-            task.abort();
+            let _ = task.join();
         }
     }
 
@@ -360,6 +370,24 @@ pub struct Machine {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+pub enum ProviderAvailability {
+    Inactive,
+    Active,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LatestOutputStatus {
+    job_id: Option<String>,
+    job_name: String,
+    state: String,
+    summary: String,
+    detail: String,
+    updated_at: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum WorkerStatus {
     Offline,
     Online,
@@ -470,9 +498,11 @@ pub struct WorkerSettings {
 #[serde(rename_all = "camelCase")]
 pub struct WorkerRuntimeSnapshot {
     registered: bool,
+    availability: ProviderAvailability,
     machine: Machine,
     metrics: ResourceMetrics,
     active_job: Option<Job>,
+    latest_output: LatestOutputStatus,
     recent_jobs: Vec<Job>,
     earnings: Earnings,
     settings: WorkerSettings,
@@ -608,11 +638,65 @@ impl WorkerRuntime {
     }
 
     fn snapshot(&self) -> WorkerRuntimeSnapshot {
+        let availability = if self.provider_session.is_some()
+            && !matches!(self.machine.status, WorkerStatus::Offline | WorkerStatus::Error)
+        {
+            ProviderAvailability::Active
+        } else {
+            ProviderAvailability::Inactive
+        };
+
+        let latest_output = if let Some(job) = &self.active_job {
+            LatestOutputStatus {
+                job_id: Some(job.id.clone()),
+                job_name: job.name.clone(),
+                state: "running".to_string(),
+                summary: format!("{:.0}% complete", job.progress),
+                detail: job
+                    .execution_output
+                    .clone()
+                    .unwrap_or_else(|| "Python execution is running in Docker.".to_string()),
+                updated_at: job.started_at.clone(),
+            }
+        } else if let Some(job) = self.recent_jobs.first() {
+            let state = match job.status {
+                JobStatus::Failed => "failed",
+                _ => "ready",
+            };
+            LatestOutputStatus {
+                job_id: Some(job.id.clone()),
+                job_name: job.name.clone(),
+                state: state.to_string(),
+                summary: if matches!(job.status, JobStatus::Failed) {
+                    "Latest job failed".to_string()
+                } else {
+                    "Latest output ready".to_string()
+                },
+                detail: job
+                    .execution_error
+                    .clone()
+                    .or_else(|| job.execution_output.clone())
+                    .unwrap_or_else(|| "Latest job finished without detailed output.".to_string()),
+                updated_at: job.estimated_completion_at.clone().or_else(|| job.started_at.clone()),
+            }
+        } else {
+            LatestOutputStatus {
+                job_id: None,
+                job_name: "No completed jobs yet".to_string(),
+                state: "idle".to_string(),
+                summary: "No output yet".to_string(),
+                detail: "Activate this producer to receive work.".to_string(),
+                updated_at: None,
+            }
+        };
+
         WorkerRuntimeSnapshot {
             registered: self.registered,
+            availability,
             machine: self.machine.clone(),
             metrics: self.metrics.clone(),
             active_job: self.active_job.clone(),
+            latest_output,
             recent_jobs: self.recent_jobs.clone(),
             earnings: self.earnings.clone(),
             settings: self.settings.clone(),
