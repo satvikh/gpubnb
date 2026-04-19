@@ -1,81 +1,86 @@
-# Computebnb
+# ComputeBNB
 
-Computebnb is a hackathon MVP for a marketplace where people lend out spare laptop or desktop compute for lightweight AI jobs. Users submit jobs through a web app. Provider machines run a local Node.js CLI agent that registers the machine, polls for work, executes one job at a time, reports progress/results, and earns money in a mock internal ledger.
+ComputeBNB is an MVP marketplace for renting spare local compute for lightweight AI and batch jobs. The project includes a Next.js control plane, a Tauri provider desktop app, a legacy Node.js worker CLI, and a Docker-based sandbox runner for executing approved demo workloads.
 
-Computebnb is not a decentralized training protocol, not a blockchain app, and not a desktop app. The web app is the control plane; the provider software is a CLI worker.
+The current demo is intentionally narrow: users create jobs in the web app, providers register machines, a scheduler assigns queued work, and worker software reports heartbeats, progress, completion, failures, and mock earnings.
+
+## What Is Included
+
+- Next.js App Router web app for the marketplace, provider dashboard, jobs, earnings, setup, and settings.
+- MongoDB/Mongoose models for providers, jobs, assignments, and job events.
+- API routes for provider registration, provider heartbeat, job creation, job lookup, worker polling, progress, completion, and failure.
+- Tauri desktop shell for a provider node UI with runtime status, controls, metrics, earnings, and sandbox runner management.
+- Node.js worker CLI for provider polling and mocked execution.
+- `worker-runner` service for running approved jobs in constrained Docker containers.
+- MongoDB starter schema, indexes, and seed data.
 
 ## Architecture
 
-- `app/`: Next.js App Router pages and API routes.
-- `components/`: Small shadcn-style UI primitives and shared view components.
-- `lib/`: Shared TypeScript types, utilities, mock in-memory store, and MongoDB Atlas client helper.
-- `worker/`: Local provider CLI agent in Node.js/TypeScript.
-- `mongodb/`: Starter Atlas collection shapes, indexes, and seed data.
-
 ```text
-User submits job
-  -> Next.js API creates queued job
-  -> simple scheduler assigns to an online provider
-  -> provider CLI polls and receives assignment
-  -> provider CLI reports start/progress/complete/fail
-  -> API updates job, events, and mock 80/20 ledger split
+Customer creates a job
+  -> Next.js API stores the queued job in MongoDB
+  -> scheduler assigns queued work to an online provider
+  -> provider software polls for work
+  -> job runs through the mock executor or Docker sandbox runner
+  -> provider reports start/progress/complete/fail
+  -> API records job events and mock provider/platform earnings
 ```
 
-## MVP Scope
+The main pieces live here:
 
-Included:
+- `app/`: Next.js pages and API routes.
+- `components/`: Shared UI primitives.
+- `lib/`: Mongoose models, DB helpers, scheduling, pricing, types, and utilities.
+- `src/`: Provider desktop UI components, hooks, runtime reducers, Tauri clients, and mock worker data.
+- `src-tauri/`: Tauri v2 Rust shell and worker manager.
+- `worker/`: Legacy Node.js provider CLI.
+- `worker-runner/`: Docker sandbox execution service.
+- `mongodb/`: Starter schema notes, indexes, and seed data.
 
-- Landing page for the product story.
-- Providers page with machine status, capabilities, rates, and mock earnings.
-- Jobs page with lifecycle status.
-- Job submission page.
-- Result page with input, output, ledger, and event log.
-- Provider registration API.
-- Provider heartbeat API.
-- Job creation and lookup APIs.
-- Worker polling API.
-- Job start/progress/complete/fail APIs.
-- Local worker CLI skeleton.
-- MongoDB Atlas collection specs for `providers`, `jobs`, `assignments`, and `job_events`.
+## Requirements
 
-Stubbed for hackathon speed:
+- Node.js 20+ recommended.
+- npm.
+- MongoDB Atlas or a local MongoDB-compatible URI.
+- Rust and Tauri prerequisites for the desktop app.
+- Docker for `worker-runner`.
 
-- Auth and user accounts.
-- Real MongoDB Atlas persistence in route handlers.
-- Secure provider token validation.
-- Capability-aware scheduling.
-- Sandboxed execution.
-- File/object storage for larger job payloads.
-- Production billing and payout settlement.
+## Environment
 
-## Local Agent Design
-
-The provider CLI lives in `worker/` and follows this loop:
-
-1. Register the machine unless `Computebnb_PROVIDER_ID` is already configured.
-2. Send a heartbeat every few seconds.
-3. Poll the control plane for one assigned job.
-4. Execute the job locally through `worker/executor.ts`.
-5. Report start, progress, completion, or failure.
-6. Return to polling.
-
-The executor is intentionally mocked. It gives the demo a believable local-worker flow without pulling in heavyweight AI runtimes during a 24-hour build.
-
-## Setup
-
-Install dependencies:
-
-```bash
-npm install
-```
-
-Create local env:
+Create the root app env file:
 
 ```bash
 cp .env.example .env.local
 ```
 
-Run the web app:
+At minimum, set:
+
+```env
+MONGODB_URI=mongodb+srv://USER:PASSWORD@CLUSTER.mongodb.net/gpubnb?retryWrites=true&w=majority
+MONGODB_DB_NAME=gpubnb
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+The legacy worker CLI also reads:
+
+```env
+GPUBNB_API_URL=http://localhost:3000
+GPUBNB_PROVIDER_ID=
+GPUBNB_PROVIDER_TOKEN=
+GPUBNB_MACHINE_NAME=Local Dev Machine
+GPUBNB_HEARTBEAT_INTERVAL_MS=5000
+GPUBNB_POLL_INTERVAL_MS=3000
+```
+
+## Setup
+
+Install the root dependencies:
+
+```bash
+npm install
+```
+
+Start the web app:
 
 ```bash
 npm run dev
@@ -83,43 +88,103 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-In a second terminal, run the provider agent:
+Seed MongoDB if you want sample providers and jobs:
+
+```bash
+mongosh "$MONGODB_URI" mongodb/indexes.js
+mongosh "$MONGODB_URI" mongodb/seed.js
+```
+
+## Provider Options
+
+### Desktop App
+
+Run the provider desktop app:
+
+```bash
+npm run tauri
+```
+
+The Tauri shell starts the Next.js frontend, opens the provider UI, and exposes worker controls through `src-tauri/src/worker_manager.rs`.
+
+### Legacy CLI
+
+Run the provider CLI in a second terminal:
 
 ```bash
 npm run worker
 ```
 
-Optional MongoDB Atlas setup:
+The CLI registers a provider if needed, sends heartbeats, polls for assignments, runs the current mocked executor, and reports lifecycle updates back to the API.
 
-1. Create a MongoDB Atlas cluster.
-2. Create a database named `Computebnb`.
-3. Review `mongodb/schema.md` for the collection shapes.
-4. Run `mongodb/indexes.js` with `mongosh` to create starter indexes.
-5. Run `mongodb/seed.js` with `mongosh` for sample provider/job data.
-6. Fill in `MONGODB_URI` and `MONGODB_DB_NAME`.
-7. Replace the mock store calls in API routes with MongoDB collection queries.
+## Docker Sandbox Runner
+
+`worker-runner` is the constrained local execution service used for approved demo job types. It runs jobs in short-lived Docker containers with CPU, memory, process, filesystem, network, timeout, and log limits.
+
+From `worker-runner/`:
+
+```bash
+npm install
+cp .env.example .env
+docker build -t computebnb/python-runner:local samples/images/python-runner
+npm run dev
+```
+
+The service listens on [http://localhost:4317](http://localhost:4317). See [`worker-runner/README.md`](worker-runner/README.md) for payload examples, REST endpoints, polling mode, and safety notes.
 
 ## Demo Flow
 
-1. Start `npm run dev`.
-2. Start `npm run worker` in another terminal.
-3. Open the providers page and confirm a provider is online.
-4. Submit a job from `/jobs/new`.
-5. Watch the worker terminal poll, start, report progress, and complete the job.
-6. Open the job result page to show output, events, and the 80% provider payout / 20% platform fee split.
+1. Configure `.env.local` with a MongoDB connection.
+2. Start the web app with `npm run dev`.
+3. Start a provider through `npm run tauri` or `npm run worker`.
+4. Open `/providers` or `/dashboard` and confirm the provider is online.
+5. Submit a job from `/jobs/new`.
+6. Watch the provider poll, start, report progress, and complete the job.
+7. Open the job result page to inspect output, events, and the mock 80% provider payout / 20% platform fee split.
 
 ## Useful Scripts
 
 - `npm run dev`: start the Next.js app.
 - `npm run build`: build the Next.js app.
 - `npm run start`: serve the built app.
-- `npm run worker`: run the local provider CLI.
-- `npm run worker:dev`: run the provider CLI in watch mode.
+- `npm run lint`: run ESLint.
+- `npm run tauri`: run the Tauri provider desktop app in development.
+- `npm run tauri:build`: build the provider desktop app bundle.
+- `npm run worker`: run the legacy provider CLI.
+- `npm run worker:dev`: run the legacy provider CLI in watch mode.
 
-## Next Five Implementation Steps
+Inside `worker-runner/`:
 
-1. Replace `lib/mock-store.ts` with MongoDB Atlas-backed repositories or route-handler queries.
-2. Add provider token hashing and validation for all worker APIs.
-3. Implement a tiny scheduler transaction that atomically assigns one queued job to one online provider.
-4. Add a real executor adapter for one safe demo job type, such as local shell commands from an allowlist or a small local model call.
-5. Add live refresh on job/result pages through lightweight polling or MongoDB change streams.
+- `npm run dev`: start the Docker sandbox runner in watch mode.
+- `npm run start`: start the runner once.
+- `npm run build`: compile TypeScript.
+- `npm run typecheck`: typecheck without emitting files.
+
+## MVP Boundaries
+
+Implemented for demo:
+
+- Provider registration and heartbeat.
+- Job creation, scheduling, status updates, and result pages.
+- MongoDB-backed route handlers and Mongoose models.
+- Provider dashboard views for active jobs, recent jobs, resource usage, earnings, and trust controls.
+- Docker sandbox runner with an image allow-list and constrained runtime settings.
+
+Still MVP-grade:
+
+- Auth is a UI/demo flow, not production identity.
+- Provider token validation is incomplete.
+- Scheduler assignment is simple and not fully transaction-safe.
+- Pricing and payouts are mocked.
+- Capability matching is lightweight.
+- Docker sandboxing is suitable for demos, not hostile-code isolation.
+- Larger payloads and artifacts need durable object storage.
+
+## Next Steps
+
+1. Add real authentication and user/provider authorization checks.
+2. Hash and validate provider tokens across all worker APIs.
+3. Make scheduling atomic so one queued job can be claimed by exactly one online provider.
+4. Connect the desktop runtime to the marketplace API and `worker-runner` end to end.
+5. Persist runner logs, artifacts, and results outside memory.
+6. Add live job updates through polling, Server-Sent Events, or change streams.
