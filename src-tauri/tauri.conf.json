@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "dev.computebnb.provider",
   "build": {
-    "beforeDevCommand": "npm run dev -- --port 3001",
+    "beforeDevCommand": "npm run dev:tauri-web",
     "devUrl": "http://localhost:3001",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../.next"

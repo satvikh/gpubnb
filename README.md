@@ -118,6 +118,16 @@ Run the web app:
 npm run dev
 ```
 
+This starts the main consumer web app and backend on `http://localhost:3000`.
+
+Run the Tauri desktop app:
+
+```bash
+npm run tauri
+```
+
+In development, Tauri serves its embedded webview from `http://localhost:3001`, while its worker/API calls target the main app on `http://localhost:3000`.
+
 Optional: run the lightweight worker loop in another terminal:
 
 ```bash

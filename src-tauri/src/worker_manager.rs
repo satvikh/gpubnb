@@ -591,7 +591,7 @@ impl WorkerRuntime {
             rng_seed: 0xC0FFEE,
             api_url: repo_env("GPUBNB_API_URL")
                 .or_else(|| repo_env("NEXT_PUBLIC_APP_URL"))
-                .unwrap_or_else(|| "http://localhost:3001".to_string()),
+                .unwrap_or_else(|| "http://localhost:3000".to_string()),
             runner_url: repo_env("GPUBNB_WORKER_RUNNER_URL")
                 .or_else(|| repo_env("WORKER_RUNNER_URL"))
                 .unwrap_or_else(|| "http://localhost:4317".to_string()),
